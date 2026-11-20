@@ -11,6 +11,7 @@ Finds exploits; never runs them.  Requires: nmap, searchsploit.
 """
 from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys
+from urllib.parse import quote_plus
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -40,6 +41,8 @@ STOP = {"microsoft","windows","httpd","server","service","services","linux","uni
         "microsoft-ds","standard","or","later","rpcbind","host","remote","daemon"}
 
 
+WEB_PORTS = {80,443,8080,8443,8000,8008,8888,7001,9090,5000,3000,8081,10000}
+
 @dataclass
 class Svc:
     port: int
@@ -50,6 +53,19 @@ class Svc:
     cpe: str = ""
     exploits: list = field(default_factory=list)   # dicts: id,title,path, msf,hot
     cves: list = field(default_factory=list)        # (cve, cvss)
+    web: list = field(default_factory=list)         # nuclei: (id, severity, detail)
+
+    @property
+    def is_web(self):
+        n = self.name.lower()
+        return (self.port in WEB_PORTS or "http" in n or "ssl" in n
+                or n in ("wsmans","https-alt","https"))
+    @property
+    def url(self):
+        tls = "https" if ("ssl" in self.name.lower() or "https" in self.name.lower()
+                          or self.port in (443,8443,8080) or "wsman" in self.name.lower()) else "http"
+        return f"{tls}://{self._ip}:{self.port}"
+    _ip: str = ""
 
     @property
     def banner(self):
@@ -86,7 +102,9 @@ def run_nmap(targets, xml_path, full, cve):
     cmd = ["nmap", "--open", "-sV", "-T4", "-oX", xml_path]
     cmd += ["-p-"] if full else ["--top-ports", str(NMAP_TOP)]
     if cve:
-        scripts = "vulners"
+        # vulners/vulscan = version/CPE -> CVE ; 'vuln' category = protocol checks
+        # that catch versionless bugs (SMB MS17-010/EternalBlue, etc.)
+        scripts = "vulners,vuln"
         if os.path.isdir("/usr/share/nmap/scripts/vulscan"):
             scripts += ",vulscan/vulscan.nse"
         cmd += ["--script", scripts]
@@ -126,6 +144,7 @@ def parse_nmap(path):
                       name=(svc_el.get("name","") if svc_el is not None else ""),
                       product=(svc_el.get("product","") if svc_el is not None else ""),
                       version=(svc_el.get("version","") if svc_el is not None else ""))
+            svc._ip = ip
             cpe = p.find("./service/cpe")
             if cpe is not None and cpe.text: svc.cpe = cpe.text
             # pull CVEs from vulners/vulscan script output on this port
@@ -157,6 +176,49 @@ def searchsploit(query):
     return res
 
 
+# ── nuclei (core engine) ──────────────────────────────────────────────────
+_SEV_RANK = {"critical":0,"high":1,"medium":2,"low":3,"info":4,"unknown":5}
+_NUC_LINE = re.compile(r"\[([a-z0-9][\w.-]*?)(?::[\w-]+)?\]\s+\[[\w-]+\]\s+\[(\w+)\]\s+(\S+)(?:\s+\[?\"?([^\"\]]+)\"?\]?)?")
+
+def run_nuclei(svc, deep=False):
+    """nuclei auto-references the service: fingerprints tech/versions + runs CVE
+    templates. Recovered versions (e.g. Tomcat 9.0.16 under AppManager) are fed
+    back into searchsploit — the bit raw nuclei doesn't do for you."""
+    url = svc.url
+    if deep:   # full automatic scan — fingerprints AND runs all matching CVE templates
+        cmd = ["nuclei","-u",url,"-as","-silent","-nc"]
+    else:      # fast: fingerprint tech + panels (recovers hidden versions) + exposures
+        cmd = ["nuclei","-u",url,"-t","http/technologies/","-t","http/exposed-panels/",
+               "-t","http/exposures/","-silent","-nc","-timeout","8","-rl","200"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True,
+                             timeout=300 if deep else 120).stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return
+    recovered = []
+    for ln in out.splitlines():
+        ln = re.sub(r"\x1b\[[0-9;]*m","",ln).strip()
+        m = _NUC_LINE.match(ln)
+        if not m:
+            continue
+        tid, sev, matched, extra = m.group(1), m.group(2).lower(), m.group(3), (m.group(4) or "").strip()
+        svc.web.append((tid, sev, extra))
+        # a tech-detect template that extracted a version -> searchsploit it
+        if extra and re.search(r"\d+\.\d+", extra) and ("detect" in tid or "version" in tid):
+            prod = tid.replace("-detect","").replace("-version","").split(":")[0]
+            recovered.append((prod, re.search(r"\d+(?:\.\d+)+", extra).group(0)))
+    for prod, ver in recovered:
+        for e in searchsploit(f"{prod} {ver}"):
+            e["via"] = f"nuclei:{prod} {ver}"
+            svc.exploits.append(e)
+    # dedupe exploits after merging nuclei-recovered ones
+    seen, uniq = set(), []
+    for e in svc.exploits:
+        if e["id"] in seen: continue
+        seen.add(e["id"]); uniq.append(e)
+    svc.exploits = uniq
+
+
 def enrich(svc, loose=False):
     # Reliable matches need a VERSION — searching a bare generic product
     # ("RPC", "Terminal Services", "httpd") returns pure noise. So by default
@@ -177,6 +239,20 @@ def enrich(svc, loose=False):
 
 
 # ── output ─────────────────────────────────────────────────────────────
+def research_links(svc):
+    """Pre-filled CVE research URLs — YOU click and read them (exam-legal, unlike
+    an automated scanner). Covers the versioned product and any nuclei-recovered
+    tech (e.g. Tomcat under a web app)."""
+    terms = {" ".join(svc.prod_tokens) + (" " + svc.ver_clean if svc.ver_clean else "")}
+    for tid, sev, extra in svc.web:        # fold in nuclei-recovered versions
+        if extra and re.search(r"\d+\.\d+", extra) and "detect" in tid:
+            terms.add(f"{tid.split(':')[0].replace('-detect','')} {re.search(r'[\\d.]+', extra).group(0)}")
+    out = []
+    for t in sorted(x for x in terms if x.strip()):
+        q = quote_plus(t)
+        out.append((t, f"exploit-db.com/search?q={q}  ·  nvd.nist.gov/vuln/search/results?query={q}"))
+    return out
+
 def rank(svc):
     # services with hot/msf exploits float to the top
     hot = sum(1 for e in svc.exploits if e["hot"] or e["msf"])
@@ -211,6 +287,17 @@ def print_host(host):
         if svc.cves:
             top = sorted(set(svc.cves), key=lambda c: float(c[1]), reverse=True)[:4]
             print("        " + DIM + "CVE: " + ", ".join(f"{c}({v})" for c,v in top) + RST)
+        # nuclei findings (fingerprints + CVEs it ran live)
+        if svc.web:
+            scol = {"critical":R,"high":R,"medium":Y,"low":Y,"info":DIM}
+            for tid, sev, extra in sorted(svc.web, key=lambda x: _SEV_RANK.get(x[1],9))[:8]:
+                c = scol.get(sev, DIM)
+                det = f"  {DIM}{extra[:40]}{RST}" if extra else ""
+                print(f"        {c}nuclei {sev:<8}{RST} {tid}{det}")
+        # exam-legal CVE research links (you do the research — always allowed)
+        if svc.prod_tokens:
+            for label, url in research_links(svc):
+                print(f"        {B}research{RST} {DIM}{label}:{RST} {url}")
 
 
 def summary(hosts):
@@ -241,6 +328,10 @@ def main():
     p.add_argument("--full", action="store_true", help="nmap -p- (all ports) instead of top 1000")
     p.add_argument("--cve", action="store_true", help="add nmap vulners/vulscan CVE scripts (vulners needs internet)")
     p.add_argument("--loose", action="store_true", help="also search product-only (no version) — noisier, more false positives")
+    p.add_argument("--nuclei", action="store_true",
+                   help="LABS ONLY — run nuclei on web services (fingerprint + CVEs). "
+                        "nuclei is an automated scanner/exploiter: NOT exam-legal. Off by default.")
+    p.add_argument("--deep", action="store_true", help="with --nuclei: full automatic scan (-as), slower")
     p.add_argument("-w","--workers", type=int, default=8, help="parallel searchsploit lookups (default 8)")
     p.add_argument("--nmap-xml-out", metavar="FILE", help="where to write nmap XML")
     p.add_argument("--no-color", action="store_true")
@@ -270,6 +361,17 @@ def main():
     with ThreadPoolExecutor(max_workers=max(1,a.workers)) as pool:
         futs = [pool.submit(enrich, s, a.loose) for s in allsvc]
         for _ in as_completed(futs): pass
+
+    # stage 3 — nuclei (LABS ONLY, opt-in) auto-references every web service
+    web = [s for s in allsvc if s.is_web]
+    if web and a.nuclei and shutil.which("nuclei"):
+        say("!", f"{Y}LAB MODE — nuclei is NOT exam-legal (automated scanner/exploiter){RST}")
+        say("*", f"stage 3 — nuclei {'(deep -as)' if a.deep else '(fast)'} on "
+                 f"{len(web)} web service(s) — fingerprints + CVEs, no prior knowledge")
+        wk = max(1, min(a.workers, 4))   # nuclei is heavy; cap parallelism
+        with ThreadPoolExecutor(max_workers=wk) as pool:
+            for _ in as_completed([pool.submit(run_nuclei, s, a.deep) for s in web]):
+                pass
 
     for h in hosts:
         if h.services: print_host(h)
