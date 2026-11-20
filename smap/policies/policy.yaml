@@ -1,0 +1,31 @@
+# sploitmap operating-policy manifest.
+# Basis: OffSec PEN-200 / OSCP exam restrictions on automated tooling.
+# VERIFY against the current official OSCP exam guide before relying on this —
+# OffSec updates the wording, and "uncertain" items are deliberately conservative.
+basis: "PEN-200 / OSCP (verify against current OffSec exam guide)"
+
+capabilities:
+  nvd_lookup:         "Query NVD for CVEs (research, no target interaction)"
+  epss:               "Query FIRST EPSS scores (research)"
+  kev:                "CISA KEV lookup (research)"
+  searchsploit:       "Local Exploit-DB search (research)"
+  active_fingerprint: "HTTP/TLS requests to the target (equivalent to browsing)"
+  nmap_service_scan:  "nmap -sV service/version detection"
+  nmap_cve_scripts:   "nmap NSE vuln/vulners scripts"
+  nuclei:             "nuclei automated scanner (templates can trigger the bug)"
+  nikto:              "nikto web scanner"
+  cred_spray:         "automated credential spraying/guessing"
+  exploit_exec:       "the tool launching an exploit itself"
+
+profiles:
+  exam:
+    description: "Default. Enumeration + external research only; operator runs every exploit by hand."
+    allowed:   [nvd_lookup, epss, kev, searchsploit, active_fingerprint, nmap_service_scan]
+    flagged:   [nmap_cve_scripts]   # permitted but some NSE vuln scripts are intrusive — opt in with --cve
+    denied:    [nuclei, nikto, cred_spray, exploit_exec]
+  lab:
+    description: "Opt-in. Adds automated scanners against explicitly authorized lab targets."
+    allowed:   [nvd_lookup, epss, kev, searchsploit, active_fingerprint, nmap_service_scan,
+                nmap_cve_scripts, nuclei, nikto]
+    flagged:   [cred_spray]
+    denied:    [exploit_exec]        # even in lab mode, sploitmap never auto-exploits
