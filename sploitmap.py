@@ -274,8 +274,18 @@ def print_host(host):
                 print(f"        {G}{e['id']:>6}{RST}  {e['title'][:60]:<60} {DIM}({ext}){RST} {flag}")
             if len(svc.exploits) > 6:
                 print(f"        {DIM}… {len(svc.exploits)-6} more — searchsploit {svc.query}{RST}")
-            best = (hot or svc.exploits)[0]["id"]
-            print(f"        {DIM}→ copy: searchsploit -m {best}   view: searchsploit -x {best}{RST}")
+            # recommend how to USE the top exploit (you run it — exam-safe)
+            be = (hot or svc.exploits)[0]
+            ext = be["path"].rsplit(".",1)[-1] if "." in be["path"] else ""
+            fn = be["path"].split("/")[-1]
+            runner = {"py":"python3","rb":"ruby","sh":"bash","pl":"perl","php":"php",
+                      "c":"gcc exploit.c -o exploit  # then ./exploit","txt":"less"}.get(ext,"")
+            print(f"        {G}→ view first:{RST}  searchsploit -x {be['id']}")
+            print(f"        {G}→ get it:{RST}     searchsploit -m {be['id']}" +
+                  (f"   {DIM}then: {runner} {fn} {svc._ip}{RST}" if runner and ext!="c" else
+                   f"   {DIM}then: {runner}{RST}" if runner else ""))
+            if be["msf"]:
+                print(f"        {G}→ or msf:{RST}     msfconsole -q -x \"search {' '.join(svc.prod_tokens) or svc.name}\"")
         elif svc.cves:
             print(f"{head}   {Y}{len(svc.cves)} CVE(s), no ExploitDB match{RST}")
         elif svc.product and not svc.searchable:
