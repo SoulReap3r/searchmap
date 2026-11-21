@@ -22,8 +22,13 @@ def _svc_rank(svc: Service) -> float:
     return max((f.actionability for f in svc.findings), default=0.0)
 
 
+def _hi_sev(f) -> bool:
+    """High/critical severity — the default 'signal' threshold (CVSS >= 7.0)."""
+    return f.cvss_severity in ("CRITICAL", "HIGH") or (f.cvss_score or 0.0) >= 7.0
+
+
 def render(result: ScanResult, policy: Policy, *, show_all: bool = False,
-           max_cves: int = 8, no_color: bool = False) -> None:
+           max_cves: int = 8, no_color: bool = False, verbose: bool = False) -> None:
     c = Console(no_color=no_color, highlight=False)
     c.print()
     c.print(Text(" searchmap ", style="bold white on blue") +
@@ -40,12 +45,13 @@ def render(result: ScanResult, policy: Policy, *, show_all: bool = False,
         c.print()
         c.rule(f"[bold bright_white]{label}[/]", style="blue")
         for svc in sorted(host.services, key=_svc_rank, reverse=True):
-            _render_service(c, svc, policy, max_cves)
+            _render_service(c, svc, policy, max_cves, verbose)
 
-    _summary(c, result)
+    _summary(c, result, verbose=verbose)
 
 
-def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int) -> None:
+def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int,
+                    verbose: bool = False) -> None:
     idc = svc.confidence
     head = Text("\n▶ ", style="bold blue")
     head.append(f"{svc.port}/{svc.proto}", style="bold cyan")
@@ -74,8 +80,10 @@ def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int) -> 
         c.print(f"    [dim]note      {n}[/]")
 
     applicable = [f for f in svc.findings if f.confidence != Confidence.NOT_APPLICABLE]
+    # default view = high/critical only; -v reveals medium/low ("deep results")
+    shown = applicable if verbose else [f for f in applicable if _hi_sev(f)]
     if applicable:
-        _cve_table(c, svc, applicable, max_cves)
+        _cve_table(c, svc, applicable, shown, max_cves, verbose)
     elif svc.product:
         c.print("    [dim]CVEs      none applicable for this exact version[/]")
 
@@ -97,23 +105,41 @@ def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int) -> 
             if st.why:
                 c.print(f"        [dim]↳ {st.why}  —  look for: {st.look_for}[/]")
 
-    if svc.recommendations:
+    rec_by_cve = {r.title.split(":")[0]: r for r in svc.recommendations}
+    start = shown if shown else applicable
+    if start and svc.recommendations:
         c.print("\n    [bold]start here[/]")
-        for r in svc.recommendations[:2]:
-            cve = r.title.split(":")[0]
-            c.print(f"      [bold]▸ {cve}[/]  [dim]{r.rationale}  ·  prereq: {r.prerequisites}[/]")
-            for cmd in r.research[:3]:
-                c.print(f"          [green]$[/] [dim]{cmd}[/]")
-            c.print(f"          [dim]✓ {r.validation}[/]")   # full text; wraps cleanly
+        for f in start[:3]:
+            r = rec_by_cve.get(f.cve_id)
+            if r is None:
+                continue
+            head = Text("      ▸ ")
+            head.append(f.cve_id, style="bold")
+            head.append(f"  {f.confidence.value.lower()}", style=_CONF_STYLE[f.confidence.value])
+            if f.cvss_score is not None:
+                head.append(f" · CVSS {f.cvss_score}", style=_SEV_STYLE.get(f.cvss_severity, "white"))
+            c.print(head)
+            c.print(f"          [dim]prereq [/] {r.prerequisites}")
+            ss = [f"searchsploit -x {e.edb_id}" for e in f.exploits if e.edb_id][:3]
+            exp = " · ".join(ss) if ss else "no public exploit indexed — research / manual"
+            c.print(f"          [dim]exploit[/] [green]{exp}[/]")
+            c.print(f"          [dim]nvd    [/] {f.nvd_url}")   # full text; wraps cleanly
 
 
-def _cve_table(c: Console, svc: Service, applicable: list, max_cves: int) -> None:
+def _cve_table(c: Console, svc: Service, applicable: list, shown: list,
+               max_cves: int, verbose: bool) -> None:
     likely = sum(1 for f in applicable if f.confidence in (Confidence.CONFIRMED, Confidence.PROBABLE))
     poss = len(applicable) - likely
-    c.print(f"\n    [bold]CVEs[/]  [green]{likely} likely[/] · [yellow]{poss} possible[/]")
+    hidden = len(applicable) - len(shown)
+    tail = f"  [dim]· {hidden} medium/low hidden (-v)[/]" if hidden and not verbose else ""
+    c.print(f"\n    [bold]CVEs[/]  [green]{likely} likely[/] · [yellow]{poss} possible[/]{tail}")
+
+    if not shown:
+        c.print("    [dim]no high/critical-severity findings — use -v for medium/low[/]")
+        return
 
     # if the version couldn't be matched (build number), say it ONCE, not per row
-    note = next((f.evidence[0] for f in applicable if f.evidence and "not directly comparable" in f.evidence[0]), "")
+    note = next((f.evidence[0] for f in shown if f.evidence and "not directly comparable" in f.evidence[0]), "")
     if note:
         c.print(f"    [yellow]⚠ {note.split(';',1)[-1].strip()} — treat these as leads, verify per advisory[/]")
 
@@ -125,7 +151,7 @@ def _cve_table(c: Console, svc: Service, applicable: list, max_cves: int) -> Non
     t.add_column("KEV", justify="center", no_wrap=True)
     t.add_column("exp", justify="right", no_wrap=True)
     t.add_column("what it is", no_wrap=True, overflow="ellipsis", min_width=24, max_width=52)
-    for f in applicable[:max_cves]:
+    for f in shown[:max_cves]:
         cvss = Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
                     style=_SEV_STYLE.get(f.cvss_severity, "white"))
         desc = " ".join((f.description or "").split())[:60]
@@ -139,62 +165,82 @@ def _cve_table(c: Console, svc: Service, applicable: list, max_cves: int) -> Non
             desc,
         )
     c.print(t)
-    if len(applicable) > max_cves:
-        c.print(f"    [dim]  … +{len(applicable)-max_cves} more — see --format html / json for the full list[/]")
+    if len(shown) > max_cves:
+        c.print(f"    [dim]  … +{len(shown)-max_cves} more shown — see --format html / json for the full list[/]")
 
     # surface the single best exploit inline (the foothold)
-    best = next((f for f in applicable for e in f.exploits if e.edb_id), None)
+    best = next((f for f in shown for e in f.exploits if e.edb_id), None)
     if best:
         e = next(e for e in best.exploits if e.edb_id)
         c.print(f"    [green]→ top exploit[/] EDB-{e.edb_id}  {e.title[:52]}  [dim]searchsploit -x {e.edb_id}[/]")
 
 
-def _summary(c: Console, result: ScanResult, top_n: int = 15) -> None:
-    # collect every applicable CVE across all hosts/services, ranked best-first
-    items = []   # (finding, ip, port)
-    for h in result.hosts:
-        for s in h.services:
-            for f in s.findings:
-                if f.confidence != Confidence.NOT_APPLICABLE:
-                    items.append((f, h.ip, s.port))
-    items.sort(key=lambda x: x[0].priority)   # tier (confirmed>possible) then actionability
-
+def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool = False) -> None:
     c.print()
-    c.rule("[bold bright_white]ATTACK SURFACE — start here (ranked)[/]", style="red")
+    title = "ATTACK SURFACE — start here (ranked per host)"
+    c.rule(f"[bold bright_white]{title}{'  [deep results]' if verbose else ''}[/]", style="red")
+    if not verbose:
+        c.print("  [dim]high-confidence IDs · high/critical severity only — add -v for the rest[/]")
 
-    if not items:
-        # no CVEs — point at services that still have exploits / enumeration
+    # one ranked block per host; hosts ordered by their best finding.
+    # default view: only HIGH-id services and high/critical findings (cut exam noise)
+    host_blocks = []
+    for h in result.hosts:
+        finds, port_of = [], {}
+        for s in h.services:
+            if not verbose and s.confidence != "HIGH":
+                continue
+            for f in s.findings:
+                if f.confidence == Confidence.NOT_APPLICABLE:
+                    continue
+                if not verbose and not _hi_sev(f):
+                    continue
+                finds.append(f)
+                port_of[id(f)] = s.port
+        finds.sort(key=lambda f: f.priority)
+        best = -finds[0].actionability if finds else 0.0
+        host_blocks.append((best, h, finds, port_of))
+    host_blocks.sort(key=lambda x: x[0])
+
+    any_cve = any(finds for _, _, finds, _ in host_blocks)
+    if not any_cve:
         leads = [f"{h.ip}:{s.port} ({s.product or s.name})"
                  for h in result.hosts for s in h.services if s.exploits or s.enum_steps]
-        if leads:
-            c.print("  [dim]no version-matched CVEs — work enumeration on:[/] " + ", ".join(leads[:8]))
-        else:
-            c.print("  [dim]no high-signal findings — work the enumeration steps above[/]")
+        c.print("  [dim]no version-matched CVEs — work enumeration on:[/] " + ", ".join(leads[:10])
+                if leads else "  [dim]no high-signal findings — work the enumeration steps above[/]")
         c.print()
         return
 
-    t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False, pad_edge=False)
-    t.add_column("#", justify="right", style="dim", no_wrap=True)
-    t.add_column("target", style="cyan", no_wrap=True)
-    t.add_column("CVE", style="bold", no_wrap=True)
-    t.add_column("conf", no_wrap=True)
-    t.add_column("CVSS", justify="right", no_wrap=True)
-    t.add_column("EPSS", justify="right", no_wrap=True)
-    t.add_column("KEV", justify="center", no_wrap=True)
-    t.add_column("exp", justify="right", no_wrap=True)
-    t.add_column("what it is", no_wrap=True, overflow="ellipsis", min_width=20, max_width=46)
-    for i, (f, ip, port) in enumerate(items[:top_n], 1):
-        t.add_row(
-            str(i), f"{ip}:{port}", f.cve_id,
-            Text(f.confidence.value.lower(), style=_CONF_STYLE[f.confidence.value]),
-            Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
-                 style=_SEV_STYLE.get(f.cvss_severity, "white")),
-            f"{f.epss:.0%}" if f.epss is not None else "—",
-            Text("KEV", style="bold red") if f.kev else "",
-            Text(str(len(f.exploits)), style="green") if f.exploits else Text("0", style="dim"),
-            " ".join((f.description or "").split())[:60],
-        )
-    c.print(t)
-    if len(items) > top_n:
-        c.print(f"  [dim]… +{len(items)-top_n} more ranked findings — see --format html / json[/]")
-    c.print("  [dim]ranked by exploit availability · KEV · EPSS · CVSS (confirmed before possible)[/]\n")
+    for _, h, finds, port_of in host_blocks:
+        if not finds:
+            svcs = ", ".join(f"{s.port}/{s.name}" for s in h.services)
+            c.print(f"\n  [bold cyan]{h.ip}[/]  [dim]— no version-matched CVEs; enumerate {svcs}[/]")
+            continue
+        top = finds[0]
+        c.print(f"\n  [bold cyan]{h.ip}[/]  [dim]top: {top.cve_id} "
+                f"CVSS {top.cvss_score} ({top.confidence.value.lower()})[/]")
+        t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False, pad_edge=False)
+        t.add_column("#", justify="right", style="dim", no_wrap=True)
+        t.add_column("port", style="cyan", no_wrap=True)
+        t.add_column("CVE", style="bold", no_wrap=True)
+        t.add_column("conf", no_wrap=True)
+        t.add_column("CVSS", justify="right", no_wrap=True)
+        t.add_column("EPSS", justify="right", no_wrap=True)
+        t.add_column("KEV", justify="center", no_wrap=True)
+        t.add_column("exp", justify="right", no_wrap=True)
+        t.add_column("what it is", no_wrap=True, overflow="ellipsis", min_width=20, max_width=46)
+        for i, f in enumerate(finds[:per_host], 1):
+            t.add_row(
+                str(i), str(port_of.get(id(f), "")), f.cve_id,
+                Text(f.confidence.value.lower(), style=_CONF_STYLE[f.confidence.value]),
+                Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
+                     style=_SEV_STYLE.get(f.cvss_severity, "white")),
+                f"{f.epss:.0%}" if f.epss is not None else "—",
+                Text("KEV", style="bold red") if f.kev else "",
+                Text(str(len(f.exploits)), style="green") if f.exploits else Text("0", style="dim"),
+                " ".join((f.description or "").split())[:60],
+            )
+        c.print(t)
+        if len(finds) > per_host:
+            c.print(f"    [dim]… +{len(finds)-per_host} more on this host[/]")
+    c.print("\n  [dim]ranked by CVSS · exploit availability · KEV · EPSS (confirmed before possible)[/]\n")

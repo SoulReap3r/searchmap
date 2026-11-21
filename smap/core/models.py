@@ -146,14 +146,15 @@ class Service:
 
     @property
     def confidence(self) -> str:
-        """Confidence in the product+version identification itself."""
-        if self.fingerprints and self.version:
-            return "HIGH"
+        """Confidence in the product+version identification itself.
+        HIGH = we have product AND a version (from nmap or fingerprint)."""
+        if not self.product:
+            return "NONE"
         if self.version:
+            return "HIGH"
+        if self.fingerprints:
             return "MEDIUM"
-        if self.product:
-            return "LOW"
-        return "NONE"
+        return "LOW"
 
 
 @dataclass

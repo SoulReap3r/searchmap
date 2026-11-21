@@ -50,6 +50,9 @@ def cmd_scan(argv: list[str]) -> int:
     p.add_argument("--profile", choices=["exam", "lab"], default="exam")
     p.add_argument("--offline", action="store_true", help="use only cached intel (no network)")
     p.add_argument("--all", dest="show_all", action="store_true", help="include NOT_APPLICABLE CVEs")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="deep results: show medium/low severity and low-confidence IDs too "
+                        "(default hides them to cut exam noise)")
     p.add_argument("--format", choices=["terminal", "json", "markdown", "html"], default="terminal")
     p.add_argument("-o", "--output", metavar="FILE", help="write report to a file")
     p.add_argument("-w", "--workers", type=int, default=8)
@@ -138,7 +141,8 @@ def cmd_scan(argv: list[str]) -> int:
 
 def _render(result, policy, a, terminal, reports):
     if a.format == "terminal":
-        terminal.render(result, policy, show_all=a.show_all, no_color=a.no_color)
+        terminal.render(result, policy, show_all=a.show_all, no_color=a.no_color,
+                        verbose=a.verbose)
         return None
     out = {"json": reports.json_report, "markdown": reports.markdown_report,
            "html": reports.html_report}[a.format](result)
