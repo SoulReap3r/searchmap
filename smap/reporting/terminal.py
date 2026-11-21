@@ -28,14 +28,22 @@ def _hi_sev(f) -> bool:
 
 
 def _short_prereq(f) -> str:
-    """Compact prerequisites from the CVSS vector: 'remote · no-auth', etc."""
+    """What you need to fire it, from the CVSS vector. The auth requirement is
+    the actionable part; 'local' is flagged because you can't hit it remotely."""
     v = f.cvss_vector or ""
-    av = ("remote" if "AV:N" in v else "adjacent" if "AV:A" in v else
-          "local" if "AV:L" in v else "physical" if "AV:P" in v else "")
-    pr = ("no-auth" if "PR:N" in v else "low-priv" if "PR:L" in v else
-          "admin" if "PR:H" in v else "")
-    bits = [x for x in (av, pr) if x] + (["user-int"] if "UI:R" in v else [])
-    return " · ".join(bits) or "—"
+    if "AV:L" in v or "AV:P" in v:
+        base = "local (need shell)"
+    elif "PR:N" in v:
+        base = "unauth"                 # no creds needed — the good case
+    elif "PR:L" in v:
+        base = "needs creds (user)"
+    elif "PR:H" in v:
+        base = "needs creds (admin)"
+    else:
+        base = "—"
+    if "UI:R" in v and base != "—":
+        base += " + user-interaction"
+    return base
 
 
 def _exploit_cmd(f) -> str:
@@ -232,21 +240,19 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
         t.add_column("CVE", style="bold", no_wrap=True)
         t.add_column("conf", no_wrap=True)
         t.add_column("CVSS", justify="right", no_wrap=True)
-        t.add_column("KEV", justify="center", no_wrap=True)
         t.add_column("exploit", style="green", no_wrap=True)
-        t.add_column("prereq", overflow="ellipsis", no_wrap=True)
+        t.add_column("need", overflow="ellipsis", no_wrap=True)
         for i, f in enumerate(finds[:per_host], 1):
             t.add_row(
                 str(i), str(port_of.get(id(f), "")), f.cve_id,
                 Text(f.confidence.value.lower(), style=_CONF_STYLE[f.confidence.value]),
                 Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
                      style=_SEV_STYLE.get(f.cvss_severity, "white")),
-                Text("KEV", style="bold red") if f.kev else "",
                 _exploit_cmd(f),
                 _short_prereq(f),
             )
         c.print(t)
         if len(finds) > per_host:
             c.print(f"    [dim]… +{len(finds)-per_host} more on this host (-v / --format html)[/]")
-    c.print("\n  [dim]ranked by CVSS · exploit · KEV · EPSS (confirmed first) · "
+    c.print("\n  [dim]ranked: confirmed first, then severity + a public exploit  ·  "
             "detail: searchmap cve <ID>  ·  nvd.nist.gov/vuln/detail/<ID>[/]\n")
