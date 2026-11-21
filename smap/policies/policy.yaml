@@ -1,4 +1,4 @@
-# sploitmap operating-policy manifest.
+# searchmap operating-policy manifest.
 # Basis: OffSec PEN-200 / OSCP exam restrictions on automated tooling.
 # VERIFY against the current official OSCP exam guide before relying on this —
 # OffSec updates the wording, and "uncertain" items are deliberately conservative.
@@ -28,4 +28,4 @@ profiles:
     allowed:   [nvd_lookup, epss, kev, searchsploit, active_fingerprint, nmap_service_scan,
                 nmap_cve_scripts, nuclei, nikto]
     flagged:   [cred_spray]
-    denied:    [exploit_exec]        # even in lab mode, sploitmap never auto-exploits
+    denied:    [exploit_exec]        # even in lab mode, searchmap never auto-exploits

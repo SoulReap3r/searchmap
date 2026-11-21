@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sploitmap"
+name = "searchmap"
 version = "3.0.0"
 description = "Reconnaissance, vulnerability-intelligence and manual-exploitation recommendation framework for OSCP-style engagements. Finds and recommends; never exploits."
 readme = "README.md"
@@ -22,7 +22,7 @@ dependencies = [
 test = ["pytest>=7"]
 
 [project.scripts]
-sploitmap = "smap.cli:main"
+searchmap = "smap.cli:main"
 
 [tool.setuptools]
 packages = [

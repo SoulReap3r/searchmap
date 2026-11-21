@@ -24,7 +24,7 @@ def render(result: ScanResult, policy: Policy, *, show_all: bool = False,
            max_cves: int = 8, no_color: bool = False) -> None:
     c = Console(no_color=no_color, highlight=False)
     c.print()
-    c.print(Text("  SPLOITMAP ", style="bold white on blue") + Text(f" v{result.tool_version}  "))
+    c.print(Text("  SEARCHMAP ", style="bold white on blue") + Text(f" v{result.tool_version}  "))
     c.print(f"  PROFILE: [bold]{policy.profile.upper()}[/]   {policy.description}", style="cyan")
     c.print(f"  ENGINES: {policy.enabled_summary()}", style="dim")
     c.print(f"  SOURCES: {', '.join(result.sources_used) or '—'}", style="dim")

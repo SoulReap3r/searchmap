@@ -1,15 +1,15 @@
-"""sploitmap command-line interface.
+"""searchmap command-line interface.
 
-    sploitmap <target>                 scan (exam profile, default)
-    sploitmap <target> --cve           + nmap vuln NSE
-    sploitmap <target> --deep-enum     + credentialed enum suggestions
-    sploitmap <target> --profile lab   enable lab-only engines
-    sploitmap --xml scan.xml           ingest an existing nmap -oX
-    sploitmap cve CVE-2021-41773       look up one CVE
-    sploitmap research "Apache 2.4.49" ad-hoc product research
-    sploitmap doctor                   dependency / connectivity / policy check
-    sploitmap update-db                refresh CISA KEV feed + caches
-    sploitmap report scan.json --format html
+    searchmap <target>                 scan (exam profile, default)
+    searchmap <target> --cve           + nmap vuln NSE
+    searchmap <target> --deep-enum     + credentialed enum suggestions
+    searchmap <target> --profile lab   enable lab-only engines
+    searchmap --xml scan.xml           ingest an existing nmap -oX
+    searchmap cve CVE-2021-41773       look up one CVE
+    searchmap research "Apache 2.4.49" ad-hoc product research
+    searchmap doctor                   dependency / connectivity / policy check
+    searchmap update-db                refresh CISA KEV feed + caches
+    searchmap report scan.json --format html
 """
 from __future__ import annotations
 import argparse
@@ -29,7 +29,7 @@ def _now() -> str:
 
 # ---------------------------------------------------------------- scan --------
 def cmd_scan(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="sploitmap", description="scan + map a target")
+    p = argparse.ArgumentParser(prog="searchmap", description="scan + map a target")
     p.add_argument("target", nargs="?", help="IP / host / CIDR, or a file of them")
     p.add_argument("--xml", metavar="FILE", help="ingest an existing nmap -oX file")
     p.add_argument("--full", action="store_true", help="scan all 65535 ports")
@@ -75,7 +75,7 @@ def cmd_scan(argv: list[str]) -> int:
         elif use_cve and policy.check("nmap_cve_scripts").flagged:
             print("[!] nmap vuln NSE: permitted but intrusive — confirm it's exam-legal for you", file=sys.stderr)
         import tempfile
-        fd, xml = tempfile.mkstemp(prefix="sploitmap_", suffix=".xml")
+        fd, xml = tempfile.mkstemp(prefix="searchmap_", suffix=".xml")
         os.close(fd)   # unique per run: concurrent scans never clobber each other
         print(f"[*] nmap -sV{' + NSE vuln' if use_cve else ''} on {len(targets)} target(s)", file=sys.stderr)
         nmap.run(targets, xml, full=a.full, cve=use_cve)
@@ -130,7 +130,7 @@ def _render(result, policy, a, terminal, reports):
 
 # ---------------------------------------------------------------- cve ---------
 def cmd_cve(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="sploitmap cve", description="look up a single CVE")
+    p = argparse.ArgumentParser(prog="searchmap cve", description="look up a single CVE")
     p.add_argument("cve_id")
     p.add_argument("--offline", action="store_true")
     a = p.parse_args(argv)
@@ -179,7 +179,7 @@ def cmd_cve(argv: list[str]) -> int:
 
 # ------------------------------------------------------------- research -------
 def cmd_research(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="sploitmap research", description="ad-hoc product CVE research")
+    p = argparse.ArgumentParser(prog="searchmap research", description="ad-hoc product CVE research")
     p.add_argument("query", help='e.g. "Apache httpd 2.4.49" or "OpenSSH 7.2p2"')
     p.add_argument("--offline", action="store_true")
     p.add_argument("--all", dest="show_all", action="store_true")
@@ -194,7 +194,7 @@ def cmd_research(argv: list[str]) -> int:
     print(f"\nquery: product={product!r} version={version!r}")
     print(f"resolved CPE: {cpe.to_string() if cpe else 'UNRESOLVED (no CVE lookup possible)'}")
     if not cpe:
-        print("  try a more specific product name, or `sploitmap cve <id>` directly")
+        print("  try a more specific product name, or `searchmap cve <id>` directly")
         return 1
     likely = [f for f in findings if f.confidence.value in ("CONFIRMED", "PROBABLE")]
     print(f"{len(likely)} likely applicable CVE(s):\n")
@@ -231,7 +231,7 @@ def cmd_update(argv: list[str]) -> int:
 
 # -------------------------------------------------------------- report --------
 def cmd_report(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="sploitmap report", description="re-render a saved JSON scan")
+    p = argparse.ArgumentParser(prog="searchmap report", description="re-render a saved JSON scan")
     p.add_argument("input", help="a scan JSON produced by --format json")
     p.add_argument("--format", choices=["markdown", "html", "json"], default="html")
     p.add_argument("-o", "--output")
@@ -256,7 +256,7 @@ SUBCOMMANDS = {"cve": cmd_cve, "research": cmd_research, "doctor": cmd_doctor,
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ("-V", "--version"):
-        print(f"sploitmap {__version__}")
+        print(f"searchmap {__version__}")
         return 0
     if argv and argv[0] in ("-h", "--help"):
         print(__doc__)

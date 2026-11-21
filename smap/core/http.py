@@ -11,7 +11,7 @@ from typing import Optional
 
 import requests
 
-USER_AGENT = "sploitmap/3.0 (+vulnerability-research)"
+USER_AGENT = "searchmap/3.0 (+vulnerability-research)"
 
 _session: Optional[requests.Session] = None
 _locks: dict[str, threading.Lock] = {}

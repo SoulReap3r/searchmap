@@ -1,4 +1,4 @@
-sploitmap_scan.xml
+searchmap_scan.xml
 *.pyc
 __pycache__/
 .pytest_cache/

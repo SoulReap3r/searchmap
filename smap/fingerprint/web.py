@@ -38,7 +38,7 @@ def _http_get(url: str):
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    req = urllib.request.Request(url, headers={"User-Agent": "sploitmap"})
+    req = urllib.request.Request(url, headers={"User-Agent": "searchmap"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
             return dict(r.headers), r.read(65536), r.status

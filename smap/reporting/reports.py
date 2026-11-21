@@ -15,7 +15,7 @@ def _applicable(svc):
 
 
 def markdown_report(result: ScanResult) -> str:
-    L = [f"# sploitmap report (v{result.tool_version})",
+    L = [f"# searchmap report (v{result.tool_version})",
          "", f"- **Profile:** {result.profile}",
          f"- **Scanned:** {result.started} → {result.finished}",
          f"- **Sources:** {', '.join(result.sources_used) or '—'}", ""]
@@ -54,7 +54,7 @@ def markdown_report(result: ScanResult) -> str:
 
 
 _HTML_HEAD = """<!doctype html><html><head><meta charset="utf-8">
-<title>sploitmap report</title><style>
+<title>searchmap report</title><style>
 body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0d1117;color:#c9d1d9}
 .wrap{max-width:1100px;margin:0 auto;padding:24px}
 h1{color:#58a6ff} h2{border-bottom:1px solid #30363d;padding-bottom:4px;margin-top:32px}
@@ -73,7 +73,7 @@ th{background:#161b22}
 
 def html_report(result: ScanResult) -> str:
     e = html.escape
-    out = [_HTML_HEAD, f"<h1>sploitmap report</h1>",
+    out = [_HTML_HEAD, f"<h1>searchmap report</h1>",
            f"<p class=meta>Profile <b>{e(result.profile)}</b> · "
            f"{e(result.started)} → {e(result.finished)} · "
            f"sources: {e(', '.join(result.sources_used) or '—')}</p>"]

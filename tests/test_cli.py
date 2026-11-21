@@ -10,7 +10,7 @@ FIX = str(pathlib.Path(__file__).parent / "fixtures" / "scan.xml")
 
 def test_version(capsys):
     assert cli.main(["--version"]) == 0
-    assert "sploitmap 3.0" in capsys.readouterr().out
+    assert "searchmap 3.0" in capsys.readouterr().out
 
 
 def test_help():

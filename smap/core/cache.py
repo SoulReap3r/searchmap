@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-HOME = Path(os.environ.get("SPLOITMAP_HOME", Path.home() / ".local/share/sploitmap"))
+HOME = Path(os.environ.get("SEARCHMAP_HOME", Path.home() / ".local/share/searchmap"))
 CACHE_DIR = HOME / "cache"
 FEED_DIR = HOME / "feeds"
 for _d in (CACHE_DIR, FEED_DIR):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sploitmap launcher — keeps ~/.local/bin/sploitmap working without install.
+"""searchmap launcher — keeps ~/.local/bin/searchmap working without install.
 The implementation lives in the `smap` package next to this file."""
 import pathlib
 import sys

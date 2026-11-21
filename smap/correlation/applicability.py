@@ -1,7 +1,7 @@
 """The confidence engine.
 
 Given a raw NVD CVE and the detected (product, version), decide whether the CVE
-*actually* applies, with evidence. This is the module that separates sploitmap
+*actually* applies, with evidence. This is the module that separates searchmap
 from a keyword grep: it reads every ``cpeMatch`` for our product, checks the
 detected version against the real version bounds, and refuses to call an
 unbounded wildcard match a confirmed vulnerability.

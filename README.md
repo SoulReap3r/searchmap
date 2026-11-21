@@ -1,4 +1,4 @@
-# sploitmap v3.0
+# searchmap v3.0
 
 A reconnaissance, **vulnerability-intelligence** and manual-exploitation
 *recommendation* framework for OSCP-style engagements. It takes an imperfect
@@ -15,16 +15,16 @@ Apache as an unbounded wildcard does **not** get reported against your
 Apache 2.4.49.
 
 ```bash
-sploitmap 10.10.10.5                     # scan + map (exam profile, default)
-sploitmap 10.10.10.5 --cve               # + nmap vuln/vulners NSE
-sploitmap 10.10.10.5 --deep-enum         # + credentialed enum suggestions
-sploitmap --xml scan.xml                 # ingest an existing nmap -oX
-sploitmap 10.10.10.5 --profile lab       # enable lab-only engines (nuclei, nikto)
-sploitmap 10.10.10.5 --format html -o report.html
-sploitmap cve CVE-2021-41773             # look up one CVE (full detail)
-sploitmap research "Apache httpd 2.4.49" # ad-hoc product research
-sploitmap update-db                      # refresh CISA KEV feed + caches
-sploitmap doctor                         # dependencies / connectivity / policy
+searchmap 10.10.10.5                     # scan + map (exam profile, default)
+searchmap 10.10.10.5 --cve               # + nmap vuln/vulners NSE
+searchmap 10.10.10.5 --deep-enum         # + credentialed enum suggestions
+searchmap --xml scan.xml                 # ingest an existing nmap -oX
+searchmap 10.10.10.5 --profile lab       # enable lab-only engines (nuclei, nikto)
+searchmap 10.10.10.5 --format html -o report.html
+searchmap cve CVE-2021-41773             # look up one CVE (full detail)
+searchmap research "Apache httpd 2.4.49" # ad-hoc product research
+searchmap update-db                      # refresh CISA KEV feed + caches
+searchmap doctor                         # dependencies / connectivity / policy
 ```
 
 ## How it works (4 stages)
@@ -58,7 +58,7 @@ sploitmap doctor                         # dependencies / connectivity / policy
 | **Exploit-DB** | public exploits / PoCs | local `searchsploit` | local |
 | **nmap NSE** | version-less protocol bugs (MS17-010) | `--cve` | n/a |
 
-Everything is cached under `~/.local/share/sploitmap/`. `--offline` serves only
+Everything is cached under `~/.local/share/searchmap/`. `--offline` serves only
 cached intel. **Privacy:** queries carry only public product ids / CVE ids — the
 target IP and your identity never leave the box. Set `NVD_API_KEY` to lift the
 anonymous 5-req/30s rate limit to 50.
@@ -73,7 +73,7 @@ and enforced positively (a capability runs only if the active profile lists it).
   are **blocked**. `--cve` (nmap vuln NSE) is *permitted but flagged* as
   intrusive — confirm it is exam-legal for you.
 - **LAB (`--profile lab`)** — adds automated scanners against explicitly
-  authorized targets. Even here, sploitmap **never launches an exploit itself.**
+  authorized targets. Even here, searchmap **never launches an exploit itself.**
 
 > The policy is based on PEN-200 / OSCP guidance. **Verify against the current
 > official OffSec exam guide** — the manifest is deliberately conservative where
@@ -82,8 +82,8 @@ and enforced positively (a capability runs only if the active profile lists it).
 ## Install
 
 ```bash
-# option A: just run it (keeps ~/.local/bin/sploitmap on PATH)
-ln -sf "$PWD/sploitmap.py" ~/.local/bin/sploitmap
+# option A: just run it (keeps ~/.local/bin/searchmap on PATH)
+ln -sf "$PWD/searchmap.py" ~/.local/bin/searchmap
 
 # option B: packaged install
 pipx install .        # or: pip install --user .
@@ -91,7 +91,7 @@ pipx install .        # or: pip install --user .
 
 Requires Python ≥3.10 and `nmap` + `searchsploit`. Optional tools (nxc, whatweb,
 nuclei, …) are used when present and never fatal if missing — run
-`sploitmap doctor` to see what's available.
+`searchmap doctor` to see what's available.
 
 ## Architecture
 

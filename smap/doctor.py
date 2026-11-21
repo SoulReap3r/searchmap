@@ -1,4 +1,4 @@
-"""`sploitmap doctor` — dependencies, API connectivity, caches, policy."""
+"""`searchmap doctor` — dependencies, API connectivity, caches, policy."""
 from __future__ import annotations
 import shutil
 import subprocess
@@ -48,7 +48,7 @@ def _probe(url: str, params=None) -> tuple[bool, str]:
 
 def run_doctor(argv: list[str]) -> int:
     c = Console()
-    c.print(f"\n[bold white on blue] sploitmap doctor [/]\n")
+    c.print(f"\n[bold white on blue] searchmap doctor [/]\n")
 
     # dependencies
     t = Table(title="dependencies", show_lines=False, title_justify="left")
@@ -91,7 +91,7 @@ def run_doctor(argv: list[str]) -> int:
     c.print("\n[bold]caches[/]")
     c.print(f"  intel cache: {st['entries']} entries, {st['bytes']//1024} KiB  [dim]{st['dir']}[/]")
     c.print(f"  CISA KEV feed: " + ("[green]present[/]" if cisa.have_feed()
-            else "[yellow]absent[/] [dim](run: sploitmap update-db)[/]"))
+            else "[yellow]absent[/] [dim](run: searchmap update-db)[/]"))
 
     # policy
     c.print("\n[bold]operating profiles[/]")
