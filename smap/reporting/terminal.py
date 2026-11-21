@@ -27,6 +27,22 @@ def _hi_sev(f) -> bool:
     return f.cvss_severity in ("CRITICAL", "HIGH") or (f.cvss_score or 0.0) >= 7.0
 
 
+def _short_prereq(f) -> str:
+    """Compact prerequisites from the CVSS vector: 'remote · no-auth', etc."""
+    v = f.cvss_vector or ""
+    av = ("remote" if "AV:N" in v else "adjacent" if "AV:A" in v else
+          "local" if "AV:L" in v else "physical" if "AV:P" in v else "")
+    pr = ("no-auth" if "PR:N" in v else "low-priv" if "PR:L" in v else
+          "admin" if "PR:H" in v else "")
+    bits = [x for x in (av, pr) if x] + (["user-int"] if "UI:R" in v else [])
+    return " · ".join(bits) or "—"
+
+
+def _exploit_cmd(f) -> str:
+    ex = next((e for e in f.exploits if e.edb_id), None)
+    return f"searchsploit -x {ex.edb_id}" if ex else "—"
+
+
 def render(result: ScanResult, policy: Policy, *, show_all: bool = False,
            max_cves: int = 8, no_color: bool = False, verbose: bool = False) -> None:
     c = Console(no_color=no_color, highlight=False)
@@ -44,14 +60,16 @@ def render(result: ScanResult, policy: Policy, *, show_all: bool = False,
         label = host.ip + (f"  {host.hostname}" if host.hostname else "") + (f"  ·  {host.os}" if host.os else "")
         c.print()
         c.rule(f"[bold bright_white]{label}[/]", style="blue")
+        seen_enum: set[str] = set()   # dedupe identical enum (e.g. SMB on 139 & 445)
         for svc in sorted(host.services, key=_svc_rank, reverse=True):
-            _render_service(c, svc, policy, max_cves, verbose)
+            _render_service(c, svc, policy, max_cves, verbose, seen_enum)
 
     _summary(c, result, verbose=verbose)
 
 
 def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int,
-                    verbose: bool = False) -> None:
+                    verbose: bool = False, seen_enum: set | None = None) -> None:
+    seen_enum = seen_enum if seen_enum is not None else set()
     idc = svc.confidence
     head = Text("\n▶ ", style="bold blue")
     head.append(f"{svc.port}/{svc.proto}", style="bold cyan")
@@ -96,34 +114,21 @@ def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int,
             line.append(f"   searchsploit -x {e.edb_id}", style="dim")
             c.print(line)
 
+    # enumeration — show each protocol's steps once per host (SMB on 139 & 445 is identical)
     steps = svc.enum_steps or registry.build_steps(svc, has_creds=False, lab=(policy.profile == "lab"))
     if steps:
-        c.print(f"\n    [bold]enumeration[/] [dim]· {registry.protocol_key(svc) or 'generic'}[/]")
-        for st in steps[:4]:
-            c.print(f"      • [bright_white]{st.what}[/]")
-            c.print(f"        [cyan]{st.command}[/]")
-            if st.why:
-                c.print(f"        [dim]↳ {st.why}  —  look for: {st.look_for}[/]")
-
-    rec_by_cve = {r.title.split(":")[0]: r for r in svc.recommendations}
-    start = shown if shown else applicable
-    if start and svc.recommendations:
-        c.print("\n    [bold]start here[/]")
-        for f in start[:3]:
-            r = rec_by_cve.get(f.cve_id)
-            if r is None:
-                continue
-            head = Text("      ▸ ")
-            head.append(f.cve_id, style="bold")
-            head.append(f"  {f.confidence.value.lower()}", style=_CONF_STYLE[f.confidence.value])
-            if f.cvss_score is not None:
-                head.append(f" · CVSS {f.cvss_score}", style=_SEV_STYLE.get(f.cvss_severity, "white"))
-            c.print(head)
-            c.print(f"          [dim]prereq [/] {r.prerequisites}")
-            ss = [f"searchsploit -x {e.edb_id}" for e in f.exploits if e.edb_id][:3]
-            exp = " · ".join(ss) if ss else "no public exploit indexed — research / manual"
-            c.print(f"          [dim]exploit[/] [green]{exp}[/]")
-            c.print(f"          [dim]nvd    [/] {f.nvd_url}")   # full text; wraps cleanly
+        key = registry.protocol_key(svc) or "generic"
+        if key in seen_enum:
+            c.print(f"\n    [dim]enumeration · {key} — same as above[/]")
+        else:
+            seen_enum.add(key)
+            c.print(f"\n    [bold]enumeration[/] [dim]· {key}[/]")
+            for st in steps[:4]:
+                c.print(f"      • [bright_white]{st.what}[/]  [cyan]{st.command}[/]")
+                if st.why:
+                    c.print(f"        [dim]↳ {st.why}  —  look for: {st.look_for}[/]")
+    # NB: the actionable "start here" (prereq / searchsploit / nvd) now lives once,
+    # in the ATTACK SURFACE table at the end — no per-service duplicate.
 
 
 def _cve_table(c: Console, svc: Service, applicable: list, shown: list,
@@ -219,28 +224,29 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
         top = finds[0]
         c.print(f"\n  [bold cyan]{h.ip}[/]  [dim]top: {top.cve_id} "
                 f"CVSS {top.cvss_score} ({top.confidence.value.lower()})[/]")
+        # action table: what to run, not what it is (the description is in the
+        # per-service CVE table above — shown once)
         t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False, pad_edge=False)
         t.add_column("#", justify="right", style="dim", no_wrap=True)
         t.add_column("port", style="cyan", no_wrap=True)
         t.add_column("CVE", style="bold", no_wrap=True)
         t.add_column("conf", no_wrap=True)
         t.add_column("CVSS", justify="right", no_wrap=True)
-        t.add_column("EPSS", justify="right", no_wrap=True)
         t.add_column("KEV", justify="center", no_wrap=True)
-        t.add_column("exp", justify="right", no_wrap=True)
-        t.add_column("what it is", no_wrap=True, overflow="ellipsis", min_width=20, max_width=46)
+        t.add_column("exploit", style="green", no_wrap=True)
+        t.add_column("prereq", overflow="ellipsis", no_wrap=True)
         for i, f in enumerate(finds[:per_host], 1):
             t.add_row(
                 str(i), str(port_of.get(id(f), "")), f.cve_id,
                 Text(f.confidence.value.lower(), style=_CONF_STYLE[f.confidence.value]),
                 Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
                      style=_SEV_STYLE.get(f.cvss_severity, "white")),
-                f"{f.epss:.0%}" if f.epss is not None else "—",
                 Text("KEV", style="bold red") if f.kev else "",
-                Text(str(len(f.exploits)), style="green") if f.exploits else Text("0", style="dim"),
-                " ".join((f.description or "").split())[:60],
+                _exploit_cmd(f),
+                _short_prereq(f),
             )
         c.print(t)
         if len(finds) > per_host:
-            c.print(f"    [dim]… +{len(finds)-per_host} more on this host[/]")
-    c.print("\n  [dim]ranked by CVSS · exploit availability · KEV · EPSS (confirmed before possible)[/]\n")
+            c.print(f"    [dim]… +{len(finds)-per_host} more on this host (-v / --format html)[/]")
+    c.print("\n  [dim]ranked by CVSS · exploit · KEV · EPSS (confirmed first) · "
+            "detail: searchmap cve <ID>  ·  nvd.nist.gov/vuln/detail/<ID>[/]\n")
