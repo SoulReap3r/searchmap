@@ -104,6 +104,12 @@ def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int,
         c.print(f"    [dim]seen      {' · '.join(dict.fromkeys(seen))}[/]")
     for n in svc.notes[:2]:
         c.print(f"    [dim]note      {n}[/]")
+    if svc.default_creds:
+        from ..intelligence import creds as _creds
+        c.print(f"    [bold red]creds[/]     [red]try: {', '.join(svc.default_creds[:6])}[/]"
+                f"  [dim]· more: {_creds.lookup_cmd(svc.product)}[/]")
+    if svc.creds_tested:
+        c.print(f"    [bold green]VALID[/]     [green]{' · '.join(svc.creds_tested[:4])}[/]")
 
     applicable = [f for f in svc.findings if f.confidence != Confidence.NOT_APPLICABLE]
     # default view = high/critical only; -v reveals medium/low ("deep results")

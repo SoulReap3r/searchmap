@@ -138,6 +138,8 @@ class Service:
     exploits: list[ExploitRef] = field(default_factory=list)
     enum_steps: list[EnumStep] = field(default_factory=list)
     recommendations: list[Recommendation] = field(default_factory=list)
+    default_creds: list[str] = field(default_factory=list)   # known defaults to try
+    creds_tested: list[str] = field(default_factory=list)     # lab-only --creds-test hits
     notes: list[str] = field(default_factory=list)
 
     @property

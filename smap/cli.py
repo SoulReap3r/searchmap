@@ -48,6 +48,8 @@ def cmd_scan(argv: list[str]) -> int:
     p.add_argument("--deep-enum", action="store_true", help="include credentialed enum steps")
     p.add_argument("--no-fp", action="store_true", help="skip active web fingerprinting")
     p.add_argument("--profile", choices=["exam", "lab"], default="exam")
+    p.add_argument("--creds-test", action="store_true",
+                   help="LAB ONLY — actively test default creds against web logins (wraps changeme)")
     p.add_argument("--offline", action="store_true", help="use only cached intel (no network)")
     p.add_argument("--all", dest="show_all", action="store_true", help="include NOT_APPLICABLE CVEs")
     p.add_argument("-v", "--verbose", action="store_true",
@@ -129,6 +131,20 @@ def cmd_scan(argv: list[str]) -> int:
                                               lab=(a.profile == "lab"))
     for src in ("NVD", "EPSS", "CISA-KEV", "Exploit-DB"):
         sources.append(src)
+
+    # optional lab-only stage — actively test default creds (wraps changeme)
+    if a.creds_test:
+        if a.profile != "lab":
+            print("[!] --creds-test is LAB ONLY — re-run with --profile lab", file=sys.stderr)
+        else:
+            from .intelligence import creds
+            webs = [s for s in services if web.is_web(s) and s.default_creds]
+            print(f"[!] LAB MODE — actively testing default creds on {len(webs)} web login(s) "
+                  f"via changeme", file=sys.stderr)
+            for s in webs:
+                s.creds_tested = creds.test_login(f"{'https' if web.is_tls(s) else 'http'}://{s.host_ip}:{s.port}")
+            sources.append("creds-test")
+
     result.sources_used = list(dict.fromkeys(sources))
     result.finished = _now()
 

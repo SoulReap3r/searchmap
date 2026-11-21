@@ -90,6 +90,8 @@ def enrich_service(svc: Service, *, offline: bool = False,
     Exploit-DB hits that may predate CVE tagging, e.g. vsftpd backdoor)."""
     if not svc.product:
         return
+    from . import creds
+    svc.default_creds = creds.defaults_for(svc.product)
     resolved = None
     if svc.resolved_cpe:
         try:
