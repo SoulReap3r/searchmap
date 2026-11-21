@@ -52,8 +52,8 @@ def _exploit_cmd(f) -> str:
 
 
 def _fmt_cred(c: str) -> str:
-    """'root:' (empty password) -> 'root:(empty)' for readability."""
-    return c[:-1] + ":(empty)" if c.endswith(":") else c
+    """'root:' (empty password) -> 'root:(blank)' for readability."""
+    return c[:-1] + ":(blank)" if c.endswith(":") else c
 
 
 def _need_col(f, svc) -> str:
