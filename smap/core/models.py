@@ -72,16 +72,20 @@ class CveFinding:
     @property
     def actionability(self) -> float:
         """Evidence-based score (higher = act on it first). Uses exploit
-        *existence* + KEV + EPSS + CVSS — never description keywords."""
+        *existence* + KEV + severity + EPSS — never description keywords.
+
+        Weighted for foothold-finding: a public exploit and raw impact (CVSS)
+        dominate, so a 9.8 RCE with a PoC ranks above a 5.4 XSS with high EPSS.
+        EPSS is a tie-breaker, not the driver."""
         s = 0.0
         if self.confidence == Confidence.CONFIRMED:
-            s += 1.0
+            s += 1.5
         if self.kev:
             s += 5.0
         if self.exploits:
             s += 4.0
-        s += 4.0 * (self.epss or 0.0)
-        s += 0.2 * (self.cvss_score or 0.0)
+        s += 0.6 * (self.cvss_score or 0.0)     # impact dominates (9.8 -> +5.9)
+        s += 1.5 * (self.epss or 0.0)            # likelihood tie-breaker
         return s
 
     @property

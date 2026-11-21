@@ -149,35 +149,52 @@ def _cve_table(c: Console, svc: Service, applicable: list, max_cves: int) -> Non
         c.print(f"    [green]→ top exploit[/] EDB-{e.edb_id}  {e.title[:52]}  [dim]searchsploit -x {e.edb_id}[/]")
 
 
-def _summary(c: Console, result: ScanResult) -> None:
-    rows = []
+def _summary(c: Console, result: ScanResult, top_n: int = 15) -> None:
+    # collect every applicable CVE across all hosts/services, ranked best-first
+    items = []   # (finding, ip, port)
     for h in result.hosts:
         for s in h.services:
-            top = s.findings[0] if s.findings else None
-            score = _svc_rank(s)
-            if score <= 0 and not s.exploits:
-                continue
-            why = []
-            if top and top.kev:
-                why.append("KEV")
-            if top and top.exploits:
-                why.append("exploit")
-            if top:
-                why.append(top.confidence.value.lower())
-            rows.append((score, h.ip, s, top, " · ".join(why) or "enumerate"))
-    rows.sort(key=lambda r: -r[0])
+            for f in s.findings:
+                if f.confidence != Confidence.NOT_APPLICABLE:
+                    items.append((f, h.ip, s.port))
+    items.sort(key=lambda x: x[0].priority)   # tier (confirmed>possible) then actionability
+
     c.print()
     c.rule("[bold bright_white]ATTACK SURFACE — start here (ranked)[/]", style="red")
-    if not rows:
-        c.print("  [dim]no high-signal findings — work the enumeration steps above[/]\n")
+
+    if not items:
+        # no CVEs — point at services that still have exploits / enumeration
+        leads = [f"{h.ip}:{s.port} ({s.product or s.name})"
+                 for h in result.hosts for s in h.services if s.exploits or s.enum_steps]
+        if leads:
+            c.print("  [dim]no version-matched CVEs — work enumeration on:[/] " + ", ".join(leads[:8]))
+        else:
+            c.print("  [dim]no high-signal findings — work the enumeration steps above[/]")
+        c.print()
         return
-    t = Table(box=box.SIMPLE_HEAD, padding=(0, 2), show_edge=False, pad_edge=False)
-    t.add_column("score", justify="right", style="bold red", no_wrap=True)
+
+    t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False, pad_edge=False)
+    t.add_column("#", justify="right", style="dim", no_wrap=True)
     t.add_column("target", style="cyan", no_wrap=True)
-    t.add_column("service", style="bright_white")
-    t.add_column("lead", overflow="ellipsis", max_width=40)
-    for score, ip, s, top, why in rows[:12]:
-        lead = (f"{top.cve_id} · " if top else "") + why
-        t.add_row(f"{score:.0f}", f"{ip}:{s.port}", f"{s.product or s.name} {s.version}".strip(), lead)
+    t.add_column("CVE", style="bold", no_wrap=True)
+    t.add_column("conf", no_wrap=True)
+    t.add_column("CVSS", justify="right", no_wrap=True)
+    t.add_column("EPSS", justify="right", no_wrap=True)
+    t.add_column("KEV", justify="center", no_wrap=True)
+    t.add_column("exp", justify="right", no_wrap=True)
+    t.add_column("what it is", no_wrap=True, overflow="ellipsis", min_width=20, max_width=46)
+    for i, (f, ip, port) in enumerate(items[:top_n], 1):
+        t.add_row(
+            str(i), f"{ip}:{port}", f.cve_id,
+            Text(f.confidence.value.lower(), style=_CONF_STYLE[f.confidence.value]),
+            Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
+                 style=_SEV_STYLE.get(f.cvss_severity, "white")),
+            f"{f.epss:.0%}" if f.epss is not None else "—",
+            Text("KEV", style="bold red") if f.kev else "",
+            Text(str(len(f.exploits)), style="green") if f.exploits else Text("0", style="dim"),
+            " ".join((f.description or "").split())[:60],
+        )
     c.print(t)
-    c.print()
+    if len(items) > top_n:
+        c.print(f"  [dim]… +{len(items)-top_n} more ranked findings — see --format html / json[/]")
+    c.print("  [dim]ranked by exploit availability · KEV · EPSS · CVSS (confirmed before possible)[/]\n")
