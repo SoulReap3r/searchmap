@@ -112,3 +112,31 @@ def test_proftpd_135_confirmed():
 def test_proftpd_patched_rejected():
     # the CVE pins exactly 1.3.5; 1.3.5b / 1.3.6 are not affected
     assert assess(load("CVE-2015-3306"), proftpd("1.3.6")).confidence == Confidence.NOT_APPLICABLE
+
+
+# ---- build-in-description matching (what Google does; NVD struct range is wrong) ----
+
+def appmgr():
+    return CPE("a", "zohocorp", "manageengine_applications_manager", "*")
+
+
+def test_build_named_in_description_promotes():
+    # CVE-2020-14008 desc: "Applications Manager 14710 and before ..."; NVD's
+    # structured range wrongly says <=13.0, so without the text match it's POSSIBLE
+    f = assess(load("CVE-2020-14008"), appmgr(), build_label="14710")
+    assert f.confidence == Confidence.PROBABLE
+    assert "14710" in f.evidence[0]
+
+
+def test_build_not_named_stays_uncertain():
+    f = assess(load("CVE-2020-14008"), appmgr(), build_label="99999")
+    assert f.confidence != Confidence.PROBABLE   # 99999 isn't in the description
+
+
+def test_build_verdict_semantics():
+    from smap.correlation.applicability import build_verdict
+    assert build_verdict("14710", "Applications Manager 14710 and before allows") == "affected"
+    assert build_verdict("14710", "fixed through 14710 of the product") == "affected"
+    assert build_verdict("14710", "versions before 14710 are affected") == "fixed"
+    assert build_verdict("14710", "fixed in build 14710") == "fixed"
+    assert build_verdict("14710", "this is about version 13.0 only") is None

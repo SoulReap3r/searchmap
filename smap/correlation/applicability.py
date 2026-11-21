@@ -15,12 +15,39 @@ Confidence:
   NOT_APPLICABLE  detected version is explicitly outside every range -> dropped
 """
 from __future__ import annotations
+import re
 from typing import Optional
 
 from ..core.cpe import CPE
 from ..core.models import Confidence, CveFinding, Reference
 from ..core.versioning import eq, satisfies, has_any_bound, InvalidVersion, compare
 from ..intelligence import nvd
+
+
+_BUILD_AFFECTED = [
+    r"\b{b}\b\s*(?:and|or)\s*(?:before|earlier|prior|below|older)",
+    r"(?:through|thru|up\s*to|upto|<=)\s*(?:build\s*)?\b{b}\b",
+]
+_BUILD_FIXED = [
+    r"(?:before|prior\s*to|earlier\s*than|older\s*than|<)\s*(?:build\s*)?\b{b}\b",
+    r"(?:fixed|patched|resolved|addressed)\s+in\s+(?:build\s*)?\b{b}\b",
+]
+
+
+def build_verdict(build: str, desc: str):
+    """Does the CVE *description text* say our build is affected? This is what a
+    Google search does, and it beats NVD's structured range when that range is
+    wrong (ManageEngine CVE-2020-14008 says '14710 and before' in prose but
+    '<=13.0' in the CPE). Returns 'affected' / 'fixed' / None."""
+    d = (desc or "").lower()
+    b = re.escape(build)
+    if any(re.search(p.format(b=b), d) for p in _BUILD_AFFECTED):
+        return "affected"
+    if any(re.search(p.format(b=b), d) for p in _BUILD_FIXED):
+        return "fixed"          # our build IS the fix -> not affected
+    if re.search(rf"\b{b}\b", d):
+        return "affected"       # bare mention in this product's CVE -> affected
+    return None
 
 
 def _bounds(m: dict) -> dict:
@@ -57,6 +84,7 @@ def assess(cve_raw: dict, detected: CPE, build_label: str = "") -> Optional[CveF
     # honest phrase for the "can't compare" case
     unk = (f"detected build {build_label}, but NVD lists this product by marketing "
            f"version — build not directly comparable" if build_label else "target version unknown")
+    desc = nvd.description(cve_raw)
     version = detected.version if detected.has_version else None
     our: list[tuple[dict, CPE, str]] = []
     other_products: set[tuple[str, str]] = set()
@@ -128,8 +156,19 @@ def assess(cve_raw: dict, detected: CPE, build_label: str = "") -> Optional[CveF
     if not applicable_any:
         best_conf = Confidence.NOT_APPLICABLE  # every match excluded the version
 
+    # description-text verdict for build numbers (what Google does) — authoritative
+    # when NVD's structured range disagrees with its own prose
+    if build_label:
+        verdict = build_verdict(build_label, desc)
+        if verdict == "affected" and best_conf.rank > Confidence.PROBABLE.rank:
+            best_conf = Confidence.PROBABLE
+            evidence = [f"NVD description names build {build_label} as affected"] + evidence
+        elif verdict == "fixed":
+            best_conf = Confidence.NOT_APPLICABLE
+            evidence = [f"NVD description: build {build_label} is the fixed version — not affected"]
+
     f = CveFinding(cve_id=cve_raw.get("id", ""))
-    f.description = nvd.description(cve_raw)
+    f.description = desc
     met = nvd.metric(cve_raw)
     f.cvss_score, f.cvss_severity = met["score"], met["severity"]
     f.cvss_vector, f.cvss_version = met["vector"], met["version"]
