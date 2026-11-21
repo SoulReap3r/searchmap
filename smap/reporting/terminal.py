@@ -104,7 +104,7 @@ def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int) -> 
             c.print(f"      [bold]▸ {cve}[/]  [dim]{r.rationale}  ·  prereq: {r.prerequisites}[/]")
             for cmd in r.research[:3]:
                 c.print(f"          [green]$[/] [dim]{cmd}[/]")
-            c.print(f"          [dim]✓ {r.validation[:110]}[/]")
+            c.print(f"          [dim]✓ {r.validation}[/]")   # full text; wraps cleanly
 
 
 def _cve_table(c: Console, svc: Service, applicable: list, max_cves: int) -> None:
