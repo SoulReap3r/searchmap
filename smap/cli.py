@@ -74,10 +74,13 @@ def cmd_scan(argv: list[str]) -> int:
             print("[!] --cve blocked by profile policy; skipping NSE", file=sys.stderr)
         elif use_cve and policy.check("nmap_cve_scripts").flagged:
             print("[!] nmap vuln NSE: permitted but intrusive — confirm it's exam-legal for you", file=sys.stderr)
-        xml = os.path.join(os.getcwd(), "sploitmap_scan.xml")
+        import tempfile
+        fd, xml = tempfile.mkstemp(prefix="sploitmap_", suffix=".xml")
+        os.close(fd)   # unique per run: concurrent scans never clobber each other
         print(f"[*] nmap -sV{' + NSE vuln' if use_cve else ''} on {len(targets)} target(s)", file=sys.stderr)
         nmap.run(targets, xml, full=a.full, cve=use_cve)
         result.hosts = nmap.ingest(xml)
+        print(f"[i] nmap XML: {xml}", file=sys.stderr)
         sources.append("nmap")
 
     services = result.all_services

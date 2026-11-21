@@ -30,6 +30,24 @@ def test_ingest_bad_path_is_empty():
     assert nmap.ingest("/nonexistent/scan.xml") == []
 
 
+def test_ingest_malformed_xml_warns_not_crashes(tmp_path, capsys):
+    # the real-world bug: two nmap runs clobbered one file -> interleaved XML.
+    bad = tmp_path / "corrupt.xml"
+    bad.write_text('<?xml version="1.0"?><nmaprun><host><address addr="192.168.1'
+                   '<host starttime="1"><status state="up"/></nmaprun>')
+    assert nmap.ingest(str(bad)) == []          # must not raise, must not hang
+    assert "malformed" in capsys.readouterr().err   # and must say so, not vanish
+
+
+def test_nvd_api_key_rejects_placeholders(monkeypatch):
+    from smap.intelligence import nvd
+    for junk in ("", "...", "YOUR-KEY", "paste_key_here"):
+        monkeypatch.setenv("NVD_API_KEY", junk)
+        assert nvd.api_key() == ""              # bad value ignored -> anonymous
+    monkeypatch.setenv("NVD_API_KEY", "12345678-1234-1234-1234-123456789abc")
+    assert nvd.api_key() == "12345678-1234-1234-1234-123456789abc"
+
+
 # ---- protocol key mapping (nmap aliases + ports) ----
 
 def test_protocol_key_aliases():

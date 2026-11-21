@@ -8,6 +8,7 @@ applies to the detected version.
 """
 from __future__ import annotations
 import os
+import re
 from typing import Optional
 
 from ..core import cache, http
@@ -18,14 +19,25 @@ API_CPE = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
 CVE_TTL = 24 * 3600
 CPE_TTL = 30 * 24 * 3600
 
+# NVD keys look like a UUID. Anything else (a placeholder such as "...",
+# "YOUR-KEY") is ignored so a bad value can't silently break lookups — we just
+# fall back to anonymous (slower) instead of sending a key NVD will reject.
+_KEY_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def api_key() -> str:
+    k = (os.environ.get("NVD_API_KEY") or "").strip()
+    return k if _KEY_RE.match(k) else ""
+
 
 def _headers() -> dict:
-    k = os.environ.get("NVD_API_KEY")
+    k = api_key()
     return {"apiKey": k} if k else {}
 
 
 def _interval() -> float:
-    return 0.7 if os.environ.get("NVD_API_KEY") else 6.2
+    return 0.7 if api_key() else 6.2
 
 
 def resolve_cpe(product: str, version: str = "", *, offline: bool = False) -> Optional[CPE]:

@@ -39,9 +39,19 @@ def run(targets: Iterable[str], xml_out: str, *, full: bool = False,
 
 
 def ingest(path: str) -> list[Host]:
+    import sys
     try:
         root = ET.parse(path).getroot()
-    except Exception:
+    except FileNotFoundError:
+        print(f"[!] scan file not found: {path}", file=sys.stderr)
+        return []
+    except ET.ParseError as e:
+        print(f"[!] nmap XML at {path} is malformed ({e}).", file=sys.stderr)
+        print("    Likely a concurrent scan writing the same file, or an interrupted scan. "
+              "Re-run (each run now uses its own file), or pass a clean --xml.", file=sys.stderr)
+        return []
+    except Exception as e:
+        print(f"[!] could not read {path}: {e}", file=sys.stderr)
         return []
     hosts: list[Host] = []
     for h in root.findall("host"):
