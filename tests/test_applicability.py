@@ -95,3 +95,20 @@ def test_unrelated_product_returns_none():
 def test_missing_evidence_populated():
     f = assess(load("CVE-2021-41773"), apache("*"))
     assert any("version" in m for m in f.missing_evidence)
+
+
+# ---- ProFTPD 1.3.5 mod_copy RCE (classic OSCP unauth RCE) ----
+
+def proftpd(v="*"):
+    return CPE("a", "proftpd", "proftpd", v)
+
+
+def test_proftpd_135_confirmed():
+    f = assess(load("CVE-2015-3306"), proftpd("1.3.5"))
+    assert f.confidence == Confidence.CONFIRMED
+    assert f.cvss_score == 10.0
+
+
+def test_proftpd_patched_rejected():
+    # the CVE pins exactly 1.3.5; 1.3.5b / 1.3.6 are not affected
+    assert assess(load("CVE-2015-3306"), proftpd("1.3.6")).confidence == Confidence.NOT_APPLICABLE
