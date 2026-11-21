@@ -51,11 +51,16 @@ def _exploit_cmd(f) -> str:
     return f"searchsploit -x {ex.edb_id}" if ex else "—"
 
 
+def _fmt_cred(c: str) -> str:
+    """'root:' (empty password) -> 'root:(empty)' for readability."""
+    return c[:-1] + ":(empty)" if c.endswith(":") else c
+
+
 def _need_col(f, svc) -> str:
     """Prereq + the default creds to try when the finding needs them."""
     base = _short_prereq(f)
     if "needs creds" in base and svc is not None and svc.default_creds:
-        base += f"  → try {svc.default_creds[0]}"
+        base += f"  → try {_fmt_cred(svc.default_creds[0])}"
     return base
 
 
@@ -114,7 +119,7 @@ def _render_service(c: Console, svc: Service, policy: Policy, max_cves: int,
         c.print(f"    [dim]note      {n}[/]")
     if svc.default_creds:
         from ..intelligence import creds as _creds
-        c.print(f"    [bold red]creds[/]     [red]try: {', '.join(svc.default_creds[:6])}[/]"
+        c.print(f"    [bold red]creds[/]     [red]try: {', '.join(_fmt_cred(x) for x in svc.default_creds[:6])}[/]"
                 f"  [dim]· more: {_creds.lookup_cmd(svc.product)}[/]")
     if svc.creds_tested:
         c.print(f"    [bold green]VALID[/]     [green]{' · '.join(svc.creds_tested[:4])}[/]")
