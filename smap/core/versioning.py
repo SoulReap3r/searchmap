@@ -119,6 +119,22 @@ def sort_versions(versions: list[str], reverse: bool = False) -> list[str]:
     return sorted(versions, key=cmp_to_key(compare), reverse=reverse)
 
 
+_VER_TOKEN = re.compile(r"\d+(?:\.\d+)+(?:[-_.]?[a-z][a-z0-9]*)?", re.I)
+
+
+def clean_version(v: str) -> str:
+    """Extract the version token from a noisy nmap banner.
+
+    '10.3.24 or later' -> '10.3.24', '2.3.4 (Debian)' -> '2.3.4',
+    'Apache/2.4.49' -> '2.4.49'. Keeps patch/pre-release suffixes (7.2p2,
+    5.0.0-beta3). Returns '' when there is no dotted version (e.g. a bare build
+    number like 14710, which must not be matched as a version)."""
+    if not v:
+        return ""
+    m = _VER_TOKEN.search(str(v))
+    return m.group(0) if m else ""
+
+
 def looks_like_version(v: str) -> bool:
     """Whether a string is a CPE-matchable version rather than a build number.
     '2.4.49' / '14.0' / '13' are versions; a bare '14710' is a build number and

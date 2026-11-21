@@ -20,8 +20,9 @@ MAX_EXPLOIT_LOOKUPS = 25
 def discover_cves(product: str, version: str = "", *, offline: bool = False,
                   include_not_applicable: bool = False, resolved: Optional[CPE] = None,
                   with_exploits: bool = True) -> tuple[list[CveFinding], Optional[CPE]]:
-    from ..core.versioning import looks_like_version
-    match_version = version if (version and looks_like_version(version)) else ""
+    from ..core.versioning import clean_version, looks_like_version
+    cv = clean_version(version)            # '10.3.24 or later' -> '10.3.24'
+    match_version = cv if (cv and looks_like_version(cv)) else ""
     cpe = resolved or nvd.resolve_cpe(product, match_version, offline=offline)
     if cpe is None:
         return [], None
@@ -103,8 +104,9 @@ def enrich_service(svc: Service, *, offline: bool = False,
     # product name so build-adjacent exploits (e.g. 14700 RCE) still surface.
     # Sort code-exec / auth-bypass / metasploit first so the foothold is visible.
     if exploitdb.available():
-        from ..core.versioning import looks_like_version
-        q = svc.banner if (svc.version and looks_like_version(svc.version)) else svc.product
+        from ..core.versioning import clean_version, looks_like_version
+        cv = clean_version(svc.version)
+        q = f"{svc.product} {cv}" if (cv and looks_like_version(cv)) else svc.product
         hot = re.compile(r"(?i)remote code|\brce\b|code execution|auth\w*[\s-]*bypass|unauth")
         exs = exploitdb.by_query(q)
         exs.sort(key=lambda e: (0 if hot.search(e.title) else 1, 0 if e.is_metasploit else 1))

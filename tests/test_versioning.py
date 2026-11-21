@@ -1,7 +1,8 @@
 """Version ordering + range satisfaction — the primitive every applicability
 decision depends on. Cases are drawn from real OSCP-relevant software."""
 import pytest
-from smap.core.versioning import compare, eq, satisfies, InvalidVersion, sort_versions
+from smap.core.versioning import (compare, eq, satisfies, InvalidVersion, sort_versions,
+                                  clean_version, looks_like_version)
 
 
 @pytest.mark.parametrize("a,b,expected", [
@@ -75,3 +76,27 @@ def test_bound_wildcards_ignored():
 def test_unparseable_bound_is_lenient():
     # a garbage bound should not silently drop a real finding
     assert satisfies("2.4.49", end_excluding="notaversion")
+
+
+# ---- clean_version: nmap banners are noisy (regression: MariaDB got 0 CVEs) ----
+
+@pytest.mark.parametrize("raw,expected", [
+    ("10.3.24 or later", "10.3.24"),       # the bug: became a malformed CPE
+    ("2.3.4 (Debian)", "2.3.4"),
+    ("Apache/2.4.49", "2.4.49"),
+    ("7.2p2", "7.2p2"),                    # keep patch suffix
+    ("5.0.0-beta3", "5.0.0-beta3"),
+    ("1.890", "1.890"),
+    ("14710", ""),                         # bare build number is not a version
+    ("", ""),
+    ("unknown", ""),
+])
+def test_clean_version(raw, expected):
+    assert clean_version(raw) == expected
+
+
+def test_looks_like_version():
+    assert looks_like_version("10.3.24")
+    assert looks_like_version("14")        # major-only is a version
+    assert not looks_like_version("14710") # bare build is not
+    assert not looks_like_version("")
