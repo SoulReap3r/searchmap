@@ -91,7 +91,7 @@ def _render_service(c: Console, svc: Service, policy: Policy) -> None:
         for e in svc.exploits[:3]:
             c.print(f"          EDB-{e.edb_id} {e.title[:60]}  [dim]searchsploit -x {e.edb_id}[/]", style="green")
 
-    steps = registry.build_steps(svc, has_creds=False, lab=(policy.profile == "lab"))
+    steps = svc.enum_steps or registry.build_steps(svc, has_creds=False, lab=(policy.profile == "lab"))
     if steps:
         c.print(f"      [bold]ENUMERATION[/] ({registry.protocol_key(svc)})")
         for st in steps[:4]:

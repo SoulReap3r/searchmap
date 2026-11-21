@@ -36,6 +36,14 @@ def markdown_report(result: ScanResult) -> str:
                              f"{f.cvss_score or ''} {f.cvss_severity} | "
                              f"{f.epss:.0%} | {'yes' if f.kev else ''} | "
                              f"{'yes' if f.exploits else ''} | {(f.evidence[0] if f.evidence else '')} |")
+            if s.exploits:
+                L.append("\n*Exploit-DB (product-level):* " +
+                         ", ".join(f"EDB-{e.edb_id}" for e in s.exploits[:6]))
+            if s.enum_steps:
+                L.append("\n**Enumeration**")
+                for st in s.enum_steps[:6]:
+                    L.append(f"- {st.what}: `{st.command}`" +
+                             (f"  \n  _{st.why}_" if st.why else ""))
             for r in s.recommendations[:3]:
                 L.append(f"\n**{r.title}**  ")
                 L.append(f"*{r.rationale}* — prereq: {r.prerequisites}  ")
@@ -58,7 +66,8 @@ th{background:#161b22}
 .CONFIRMED{color:#ff7b72;font-weight:700}.PROBABLE{color:#ffa657}.POSSIBLE{color:#d29922}
 .kev{background:#da3633;color:#fff;border-radius:3px;padding:0 5px;font-size:11px}
 .rec{background:#161b22;border-left:3px solid #58a6ff;padding:8px 12px;margin:8px 0;border-radius:4px}
-.meta{color:#8b949e}.cmd{color:#7ee787}
+.enum{margin:6px 0 10px 0}.enum li{margin:3px 0}
+.meta{color:#8b949e}.cmd{color:#7ee787}.cmd code{color:#7ee787;background:#0d1117}
 </style></head><body><div class="wrap">"""
 
 
@@ -88,6 +97,16 @@ def html_report(result: ScanResult) -> str:
                         f"<td>{'yes' if f.exploits else ''}</td>"
                         f"<td>{e(f.evidence[0] if f.evidence else '')}</td></tr>")
                 out.append("</table>")
+            if s.exploits:
+                eids = ", ".join(f"<a href='https://www.exploit-db.com/exploits/{e.edb_id}'>"
+                                 f"EDB-{e.edb_id}</a>" for e in s.exploits[:8] if e.edb_id)
+                out.append(f"<p class=meta>Exploit-DB (product-level): {eids}</p>")
+            if s.enum_steps:
+                out.append("<b>Enumeration</b><ul class=enum>")
+                for st in s.enum_steps[:6]:
+                    why = f" <span class=meta>— {e(st.why)}</span>" if st.why else ""
+                    out.append(f"<li>{e(st.what)}: <code>{e(st.command)}</code>{why}</li>")
+                out.append("</ul>")
             for r in s.recommendations[:3]:
                 cmds = "".join(f"<div class=cmd>$ {e(c)}</div>" for c in r.research[:4])
                 out.append(f"<div class=rec><b>{e(r.title)}</b><br><span class=meta>{e(r.rationale)} "

@@ -98,9 +98,12 @@ def cmd_scan(argv: list[str]) -> int:
     # stage 3 — intelligence
     print(f"[*] correlating CVEs/exploits via NVD+EPSS+KEV+Exploit-DB"
           f"{' (offline cache)' if a.offline else ''}", file=sys.stderr)
+    from .protocols import registry
     for svc in services:
         engine.enrich_service(svc, offline=a.offline, include_not_applicable=a.show_all)
         recommend.for_service(svc)
+        svc.enum_steps = registry.build_steps(svc, has_creds=a.deep_enum,
+                                              lab=(a.profile == "lab"))
     for src in ("NVD", "EPSS", "CISA-KEV", "Exploit-DB"):
         sources.append(src)
     result.sources_used = list(dict.fromkeys(sources))
