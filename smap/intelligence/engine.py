@@ -63,6 +63,10 @@ def discover_cves(product: str, version: str = "", *, offline: bool = False,
             if r.is_exploit and not any(e.url == r.url for e in f.exploits):
                 f.exploits.append(ExploitRef(title="PoC / exploit reference", source="NVD-ref",
                                              url=r.url, cves=[f.cve_id]))
+    # re-rank now that exploit availability is known: the first sort ran before
+    # exploits were attached, so "has a public exploit" (+4) hadn't counted — which
+    # is why a high-EPSS no-exploit finding could outrank an RCE with a PoC.
+    findings.sort(key=lambda f: f.priority)
     return findings, cpe
 
 
