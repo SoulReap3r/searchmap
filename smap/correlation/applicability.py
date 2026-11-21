@@ -47,9 +47,16 @@ def _range_text(crit: CPE, b: dict) -> str:
     return " and ".join(parts) if parts else "all versions (no bound)"
 
 
-def assess(cve_raw: dict, detected: CPE) -> Optional[CveFinding]:
+def assess(cve_raw: dict, detected: CPE, build_label: str = "") -> Optional[CveFinding]:
     """Return a CveFinding, or None if the CVE never references our product as a
-    vulnerable component."""
+    vulnerable component.
+
+    ``build_label`` is the detected version when it's a build number that can't be
+    compared to NVD's (marketing-version) ranges — used so the evidence says
+    "detected build 14710, not comparable" rather than the false "version unknown"."""
+    # honest phrase for the "can't compare" case
+    unk = (f"detected build {build_label}, but NVD lists this product by marketing "
+           f"version — build not directly comparable" if build_label else "target version unknown")
     version = detected.version if detected.has_version else None
     our: list[tuple[dict, CPE, str]] = []
     other_products: set[tuple[str, str]] = set()
@@ -84,14 +91,14 @@ def assess(cve_raw: dict, detected: CPE) -> Optional[CveFinding]:
 
         if crit.has_version:                       # exact version pin
             if version is None:
-                conf, ev = Confidence.POSSIBLE, f"CVE pins version {crit.version}; target version unknown"
+                conf, ev = Confidence.POSSIBLE, f"CVE pins version {crit.version}; {unk}"
             elif eq(version, crit.version):
                 conf, ev = Confidence.CONFIRMED, f"exact version match ({crit.version})"
             else:
                 conf, ev = Confidence.NOT_APPLICABLE, f"affects only {crit.version}, target is {version}"
         elif has_any_bound(**b):                    # bounded range
             if version is None:
-                conf, ev = Confidence.POSSIBLE, f"affects {rng}; target version unknown"
+                conf, ev = Confidence.POSSIBLE, f"affects {rng}; {unk}"
             elif satisfies(version, **b):
                 two_sided = (b["start_including"] or b["start_excluding"]) and \
                             (b["end_including"] or b["end_excluding"])
@@ -106,7 +113,7 @@ def assess(cve_raw: dict, detected: CPE) -> Optional[CveFinding]:
                 ev = (f"this product is listed with no version bound; the primary "
                       f"vulnerable component is {ex[0]}:{ex[1]} — likely not this service")
             elif version is None:
-                conf, ev = Confidence.UNKNOWN, "product matches, no version bound and target version unknown"
+                conf, ev = Confidence.UNKNOWN, f"product matches, no version bound; {unk}"
             else:
                 conf, ev = Confidence.POSSIBLE, ("NVD lists this product with no version bound "
                                                  "(nominally all versions) — verify against vendor advisory")
@@ -137,7 +144,12 @@ def assess(cve_raw: dict, detected: CPE) -> Optional[CveFinding]:
 
     # missing-evidence prompts (what the operator still has to confirm)
     if version is None:
-        f.missing_evidence.append("exact service version (re-fingerprint or banner-grab)")
+        if build_label:
+            f.missing_evidence.append(
+                f"map build {build_label} to a marketing version to compare against NVD's range "
+                f"(check the vendor advisory / changelog)")
+        else:
+            f.missing_evidence.append("exact service version (re-fingerprint or banner-grab)")
     if multi_condition:
         f.missing_evidence.append("additional config/platform condition in the NVD node (see configurations)")
     if best_conf in (Confidence.CONFIRMED, Confidence.PROBABLE):

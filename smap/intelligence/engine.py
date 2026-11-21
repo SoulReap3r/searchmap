@@ -29,10 +29,14 @@ def discover_cves(product: str, version: str = "", *, offline: bool = False,
     if match_version and not cpe.has_version:
         cpe = cpe.with_version(match_version)
 
+    # if the detected version is a build number we couldn't match, pass it as a
+    # label so findings say "detected build 14710, not comparable" not "unknown"
+    build_label = version.strip() if (version and not match_version) else ""
+
     raw = nvd.fetch_cves(cpe, offline=offline)
     findings: list[CveFinding] = []
     for cve in raw:
-        f = assess(cve, cpe)
+        f = assess(cve, cpe, build_label=build_label)
         if f is None:
             continue
         if f.confidence == Confidence.NOT_APPLICABLE and not include_not_applicable:
