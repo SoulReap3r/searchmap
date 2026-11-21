@@ -117,3 +117,15 @@ def has_any_bound(start_including=None, start_excluding=None,
 
 def sort_versions(versions: list[str], reverse: bool = False) -> list[str]:
     return sorted(versions, key=cmp_to_key(compare), reverse=reverse)
+
+
+def looks_like_version(v: str) -> bool:
+    """Whether a string is a CPE-matchable version rather than a build number.
+    '2.4.49' / '14.0' / '13' are versions; a bare '14710' is a build number and
+    must NOT be matched against NVD version ranges (it would compare as > 14.0)."""
+    v = (v or "").strip()
+    if not v:
+        return False
+    if re.fullmatch(r"\d{4,}", v):     # bare build number
+        return False
+    return bool(re.search(r"\d+\.\d+", v)) or bool(re.fullmatch(r"\d{1,3}", v))

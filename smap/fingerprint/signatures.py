@@ -16,6 +16,8 @@ class Signature:
     server_tokens: list[str] = field(default_factory=list)  # match in Server header
     body_tokens: list[str] = field(default_factory=list)    # match in title/body/cookies
     version_re: list[str] = field(default_factory=list)      # pull version from evidence
+    probe_paths: list[str] = field(default_factory=list)     # extra URLs to GET when the
+                                                             # version isn't on "/" (login pages etc.)
     note: str = ""
 
 
@@ -41,9 +43,17 @@ SIGNATURES: list[Signature] = [
               [r"drupal[ /]?(\d+)"]),
     Signature("Webmin", [], ["webmin"], [r"webmin[^0-9]{0,6}(\d+\.\d+)"]),
     Signature("PHP", ["php/"], [], [r"php/(\d+\.\d+\.\d+)"]),
-    # vendor consoles worth naming even if CPE resolution is weak
-    Signature("ManageEngine", [], ["manageengine", "appmanager", "servicedesk", "opmanager"],
-              [], note="ManageEngine console — match exact product+build to CVE manually"),
+    # ManageEngine Applications Manager hides its version on "/"; the build
+    # number leaks on the login page (/index.do -> "Applications Manager (Build No:14710)").
+    Signature("ManageEngine Applications Manager", [],
+              ["applications manager", "appmanager", "jsessionid_apm"],
+              [r"applications manager\s*\(build\s*no\.?\s*:?\s*(\d+)\)",
+               r"build\s*no\.?\s*:?\s*(\d+)"],
+              probe_paths=["/index.do", "/webclient/common/jsp/home.jsp"],
+              note="ManageEngine Applications Manager — build number maps to known RCEs (EDB)"),
+    Signature("ManageEngine", [], ["manageengine", "servicedesk", "opmanager", "adaudit"],
+              [r"build\s*no\.?\s*:?\s*(\d+)"], probe_paths=["/index.do"],
+              note="ManageEngine console — match exact product+build to CVE/exploit"),
 ]
 
 # Server-header product parsers (authoritative when present)

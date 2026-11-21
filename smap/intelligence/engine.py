@@ -5,6 +5,7 @@ product+version  ->  CPE  ->  NVD CVEs  ->  applicability/confidence
 All source-traceable, all cached.
 """
 from __future__ import annotations
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
@@ -19,11 +20,13 @@ MAX_EXPLOIT_LOOKUPS = 25
 def discover_cves(product: str, version: str = "", *, offline: bool = False,
                   include_not_applicable: bool = False, resolved: Optional[CPE] = None,
                   with_exploits: bool = True) -> tuple[list[CveFinding], Optional[CPE]]:
-    cpe = resolved or nvd.resolve_cpe(product, version, offline=offline)
+    from ..core.versioning import looks_like_version
+    match_version = version if (version and looks_like_version(version)) else ""
+    cpe = resolved or nvd.resolve_cpe(product, match_version, offline=offline)
     if cpe is None:
         return [], None
-    if version and not cpe.has_version:
-        cpe = cpe.with_version(version)
+    if match_version and not cpe.has_version:
+        cpe = cpe.with_version(match_version)
 
     raw = nvd.fetch_cves(cpe, offline=offline)
     findings: list[CveFinding] = []
@@ -91,8 +94,14 @@ def enrich_service(svc: Service, *, offline: bool = False,
     if cpe:
         svc.resolved_cpe = cpe.to_string()
         svc.cpe_source = "alias/NVD"
-    # product-level exploit sweep (not every exploit carries a CVE)
+    # product-level exploit sweep (not every exploit carries a CVE). Pin to the
+    # version only when it's a real version; for a build number, search the
+    # product name so build-adjacent exploits (e.g. 14700 RCE) still surface.
+    # Sort code-exec / auth-bypass / metasploit first so the foothold is visible.
     if exploitdb.available():
-        q = svc.banner if svc.version else svc.product
-        existing = {(e.source, e.edb_id) for f in findings for e in f.exploits}
-        svc.exploits = [e for e in exploitdb.by_query(q) if (e.source, e.edb_id) not in existing]
+        from ..core.versioning import looks_like_version
+        q = svc.banner if (svc.version and looks_like_version(svc.version)) else svc.product
+        hot = re.compile(r"(?i)remote code|\brce\b|code execution|auth\w*[\s-]*bypass|unauth")
+        exs = exploitdb.by_query(q)
+        exs.sort(key=lambda e: (0 if hot.search(e.title) else 1, 0 if e.is_metasploit else 1))
+        svc.exploits = exs[:10]

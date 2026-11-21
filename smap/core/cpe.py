@@ -125,6 +125,10 @@ ALIASES: dict[str, tuple[str, str, str]] = {
     "dropbear":            ("a", "dropbear_ssh_project", "dropbear_ssh"),
     "lighttpd":            ("a", "lighttpd", "lighttpd"),
     "phpmyadmin":          ("a", "phpmyadmin", "phpmyadmin"),
+    "manageengine applications manager": ("a", "zohocorp", "manageengine_applications_manager"),
+    "applications manager": ("a", "zohocorp", "manageengine_applications_manager"),
+    "manageengine opmanager": ("a", "zohocorp", "manageengine_opmanager"),
+    "manageengine servicedesk plus": ("a", "zohocorp", "manageengine_servicedesk_plus"),
 }
 
 _NOISE = re.compile(r"\b(server|service|daemon|httpd|project|software|inc|the|open|source)\b")
