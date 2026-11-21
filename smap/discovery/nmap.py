@@ -23,9 +23,15 @@ def available() -> bool:
 
 
 def run(targets: Iterable[str], xml_out: str, *, full: bool = False,
-        cve: bool = False, timeout: int = 1800, extra: list[str] | None = None) -> str:
+        cve: bool = False, timeout: int = 1800, extra: list[str] | None = None,
+        ports: str | None = None) -> str:
     cmd = ["nmap", "--open", "-sV", "-T4", "-oX", xml_out]
-    cmd += ["-p-"] if full else ["--top-ports", str(TOP_PORTS)]
+    if ports:
+        cmd += ["-p", ports]
+    elif full:
+        cmd += ["-p-"]
+    else:
+        cmd += ["--top-ports", str(TOP_PORTS)]
     if cve:
         scripts = "vuln,vulners"
         cmd += ["--script", scripts]

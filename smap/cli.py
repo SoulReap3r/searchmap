@@ -27,12 +27,23 @@ def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def split_host_port(target: str) -> tuple[str, str | None]:
+    """Accept 'host:port' (e.g. 192.168.1.5:8443) and split it. Leaves CIDRs,
+    bare hosts, and anything with multiple colons (IPv6) untouched."""
+    if ":" in target and "/" not in target and target.count(":") == 1:
+        host, _, port = target.rpartition(":")
+        if host and port.isdigit() and 0 < int(port) <= 65535:
+            return host, port
+    return target, None
+
+
 # ---------------------------------------------------------------- scan --------
 def cmd_scan(argv: list[str]) -> int:
     p = argparse.ArgumentParser(prog="searchmap", description="scan + map a target")
     p.add_argument("target", nargs="?", help="IP / host / CIDR, or a file of them")
     p.add_argument("--xml", metavar="FILE", help="ingest an existing nmap -oX file")
     p.add_argument("--full", action="store_true", help="scan all 65535 ports")
+    p.add_argument("-p", "--ports", metavar="PORTS", help="scan only these ports (e.g. 8443 or 80,443)")
     p.add_argument("--cve", action="store_true", help="add nmap vuln/vulners NSE")
     p.add_argument("--deep-enum", action="store_true", help="include credentialed enum steps")
     p.add_argument("--no-fp", action="store_true", help="skip active web fingerprinting")
@@ -63,9 +74,16 @@ def cmd_scan(argv: list[str]) -> int:
         result.hosts = nmap.ingest(a.xml)
         sources.append("nmap-xml")
     else:
+        ports = a.ports
         targets = [a.target]
         if os.path.isfile(a.target):
             targets = [l.strip() for l in open(a.target) if l.strip() and not l.startswith("#")]
+        else:
+            host, port = split_host_port(a.target)
+            if port:
+                targets = [host]
+                ports = ports or port
+                print(f"[i] target {a.target} -> host {host}, port {port}", file=sys.stderr)
         if not nmap.available():
             print("[!] nmap not found; use --xml to ingest a scan", file=sys.stderr)
             return 2
@@ -77,8 +95,9 @@ def cmd_scan(argv: list[str]) -> int:
         import tempfile
         fd, xml = tempfile.mkstemp(prefix="searchmap_", suffix=".xml")
         os.close(fd)   # unique per run: concurrent scans never clobber each other
-        print(f"[*] nmap -sV{' + NSE vuln' if use_cve else ''} on {len(targets)} target(s)", file=sys.stderr)
-        nmap.run(targets, xml, full=a.full, cve=use_cve)
+        scope = f"port {ports}" if ports else ("all ports" if a.full else f"top {nmap.TOP_PORTS}")
+        print(f"[*] nmap -sV{' + NSE vuln' if use_cve else ''} ({scope}) on {len(targets)} target(s)", file=sys.stderr)
+        nmap.run(targets, xml, full=a.full, cve=use_cve, ports=ports)
         result.hosts = nmap.ingest(xml)
         print(f"[i] nmap XML: {xml}", file=sys.stderr)
         sources.append("nmap")

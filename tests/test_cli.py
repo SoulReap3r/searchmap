@@ -44,3 +44,19 @@ def test_scan_requires_target():
     import pytest
     with pytest.raises(SystemExit):   # argparse error -> exit 2
         cli.main([])
+
+
+import pytest
+
+
+@pytest.mark.parametrize("target,host,port", [
+    ("192.168.129.95:8443", "192.168.129.95", "8443"),   # the bug: was sent whole to nmap
+    ("10.0.0.1:80", "10.0.0.1", "80"),
+    ("example.com:443", "example.com", "443"),
+    ("192.168.1.0/24", "192.168.1.0/24", None),          # CIDR untouched
+    ("10.10.10.5", "10.10.10.5", None),                  # bare host untouched
+    ("fe80::1", "fe80::1", None),                        # IPv6 (multi-colon) untouched
+    ("10.0.0.1:99999", "10.0.0.1:99999", None),          # invalid port untouched
+])
+def test_split_host_port(target, host, port):
+    assert cli.split_host_port(target) == (host, port)
