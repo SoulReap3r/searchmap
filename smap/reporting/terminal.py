@@ -51,6 +51,14 @@ def _exploit_cmd(f) -> str:
     return f"searchsploit -x {ex.edb_id}" if ex else "—"
 
 
+def _need_col(f, svc) -> str:
+    """Prereq + the default creds to try when the finding needs them."""
+    base = _short_prereq(f)
+    if "needs creds" in base and svc is not None and svc.default_creds:
+        base += f"  → try {svc.default_creds[0]}"
+    return base
+
+
 def render(result: ScanResult, policy: Policy, *, show_all: bool = False,
            max_cves: int = 8, no_color: bool = False, verbose: bool = False) -> None:
     c = Console(no_color=no_color, highlight=False)
@@ -162,26 +170,25 @@ def _cve_table(c: Console, svc: Service, applicable: list, shown: list,
     if note:
         c.print(f"    [yellow]⚠ {note.split(';',1)[-1].strip()} — treat these as leads, verify per advisory[/]")
 
-    t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), expand=False, show_edge=False, pad_edge=False)
+    # full-width table; "what it is" fills the remaining space (KEV dropped to
+    # give the description room)
+    t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), expand=True, show_edge=False, pad_edge=False)
     t.add_column("CVE", style="cyan", no_wrap=True)
     t.add_column("conf", no_wrap=True)
     t.add_column("CVSS", justify="right", no_wrap=True)
     t.add_column("EPSS", justify="right", no_wrap=True)
-    t.add_column("KEV", justify="center", no_wrap=True)
     t.add_column("exp", justify="right", no_wrap=True)
-    t.add_column("what it is", no_wrap=True, overflow="ellipsis", min_width=24, max_width=52)
+    t.add_column("what it is", no_wrap=True, overflow="ellipsis", ratio=1)
     for f in shown[:max_cves]:
         cvss = Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
                     style=_SEV_STYLE.get(f.cvss_severity, "white"))
-        desc = " ".join((f.description or "").split())[:60]
         t.add_row(
             f.cve_id,
             Text(f.confidence.value.lower(), style=_CONF_STYLE[f.confidence.value]),
             cvss,
             f"{f.epss:.0%}" if f.epss is not None else "—",
-            Text("KEV", style="bold red") if f.kev else "",
             Text(str(len(f.exploits)), style="green") if f.exploits else Text("0", style="dim"),
-            desc,
+            " ".join((f.description or "").split()),
         )
     c.print(t)
     if len(shown) > max_cves:
@@ -205,7 +212,7 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
     # default view: only HIGH-id services and high/critical findings (cut exam noise)
     host_blocks = []
     for h in result.hosts:
-        finds, port_of = [], {}
+        finds, port_of, svc_of = [], {}, {}
         for s in h.services:
             if not verbose and s.confidence != "HIGH":
                 continue
@@ -216,12 +223,13 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
                     continue
                 finds.append(f)
                 port_of[id(f)] = s.port
+                svc_of[id(f)] = s
         finds.sort(key=lambda f: f.priority)
         best = -finds[0].actionability if finds else 0.0
-        host_blocks.append((best, h, finds, port_of))
+        host_blocks.append((best, h, finds, port_of, svc_of))
     host_blocks.sort(key=lambda x: x[0])
 
-    any_cve = any(finds for _, _, finds, _ in host_blocks)
+    any_cve = any(finds for _, _, finds, _, _ in host_blocks)
     if not any_cve:
         leads = [f"{h.ip}:{s.port} ({s.product or s.name})"
                  for h in result.hosts for s in h.services if s.exploits or s.enum_steps]
@@ -230,7 +238,7 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
         c.print()
         return
 
-    for _, h, finds, port_of in host_blocks:
+    for _, h, finds, port_of, svc_of in host_blocks:
         if not finds:
             svcs = ", ".join(f"{s.port}/{s.name}" for s in h.services)
             c.print(f"\n  [bold cyan]{h.ip}[/]  [dim]— no version-matched CVEs; enumerate {svcs}[/]")
@@ -238,16 +246,15 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
         top = finds[0]
         c.print(f"\n  [bold cyan]{h.ip}[/]  [dim]top: {top.cve_id} "
                 f"CVSS {top.cvss_score} ({top.confidence.value.lower()})[/]")
-        # action table: what to run, not what it is (the description is in the
-        # per-service CVE table above — shown once)
-        t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), show_edge=False, pad_edge=False)
+        # full-width action table: what to run + what you need (incl. default creds)
+        t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), expand=True, show_edge=False, pad_edge=False)
         t.add_column("#", justify="right", style="dim", no_wrap=True)
         t.add_column("port", style="cyan", no_wrap=True)
         t.add_column("CVE", style="bold", no_wrap=True)
         t.add_column("conf", no_wrap=True)
         t.add_column("CVSS", justify="right", no_wrap=True)
         t.add_column("exploit", style="green", no_wrap=True)
-        t.add_column("need", overflow="ellipsis", no_wrap=True)
+        t.add_column("need", overflow="ellipsis", no_wrap=True, ratio=1)
         for i, f in enumerate(finds[:per_host], 1):
             t.add_row(
                 str(i), str(port_of.get(id(f), "")), f.cve_id,
@@ -255,7 +262,7 @@ def _summary(c: Console, result: ScanResult, per_host: int = 10, verbose: bool =
                 Text(f"{f.cvss_score:.1f}" if f.cvss_score is not None else "—",
                      style=_SEV_STYLE.get(f.cvss_severity, "white")),
                 _exploit_cmd(f),
-                _short_prereq(f),
+                _need_col(f, svc_of.get(id(f))),
             )
         c.print(t)
         if len(finds) > per_host:
