@@ -89,7 +89,10 @@ def enrich_service(svc: Service, *, offline: bool = False,
     resolved = None
     if svc.resolved_cpe:
         try:
-            resolved = CPE.parse(svc.resolved_cpe)
+            cand = CPE.parse(svc.resolved_cpe)
+            # ignore a malformed/stale stored CPE (e.g. a version with spaces
+            # from before version-cleaning) so we re-resolve cleanly
+            resolved = cand if " " not in cand.version else None
         except ValueError:
             resolved = None
     findings, cpe = discover_cves(svc.product, svc.version, offline=offline,
