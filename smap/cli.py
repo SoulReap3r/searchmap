@@ -99,8 +99,9 @@ def cmd_scan(argv: list[str]) -> int:
         fd, xml = tempfile.mkstemp(prefix="searchmap_", suffix=".xml")
         os.close(fd)   # unique per run: concurrent scans never clobber each other
         scope = f"port {ports}" if ports else ("all ports" if a.full else f"top {nmap.TOP_PORTS}")
-        print(f"[*] nmap -sV{' + NSE vuln' if use_cve else ''} ({scope}) on {len(targets)} target(s)", file=sys.stderr)
-        nmap.run(targets, xml, full=a.full, cve=use_cve, ports=ports)
+        print(f"[*] nmap -sV{' + NSE vuln' if use_cve else ''} ({scope}) on {len(targets)} target(s)"
+              f"{'' if a.verbose else ' — output hidden, -v to show'}", file=sys.stderr)
+        nmap.run(targets, xml, full=a.full, cve=use_cve, ports=ports, quiet=not a.verbose)
         result.hosts = nmap.ingest(xml)
         print(f"[i] nmap XML: {xml}", file=sys.stderr)
         sources.append("nmap")

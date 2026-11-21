@@ -24,7 +24,7 @@ def available() -> bool:
 
 def run(targets: Iterable[str], xml_out: str, *, full: bool = False,
         cve: bool = False, timeout: int = 1800, extra: list[str] | None = None,
-        ports: str | None = None) -> str:
+        ports: str | None = None, quiet: bool = False) -> str:
     cmd = ["nmap", "--open", "-sV", "-T4", "-oX", xml_out]
     if ports:
         cmd += ["-p", ports]
@@ -37,8 +37,11 @@ def run(targets: Iterable[str], xml_out: str, *, full: bool = False,
         cmd += ["--script", scripts]
     cmd += (extra or [])
     cmd += list(targets)
+    # quiet: suppress nmap's own stdout/stderr (incl. the SF-Port fingerprint
+    # wall) — we parse the XML anyway. -v restores it.
+    sink = subprocess.DEVNULL if quiet else None
     try:
-        subprocess.run(cmd, timeout=timeout, check=False)
+        subprocess.run(cmd, timeout=timeout, check=False, stdout=sink, stderr=sink)
     except (subprocess.TimeoutExpired, KeyboardInterrupt):
         pass
     return xml_out
